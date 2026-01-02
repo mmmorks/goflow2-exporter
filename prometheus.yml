@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'goflow2-aggregator'
+    static_configs:
+      - targets: ['goflow2-aggregator:9090']
+        labels:
+          instance: 'goflow2-aggregator'
