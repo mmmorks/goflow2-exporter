@@ -6,6 +6,12 @@ pub struct AsnLookup {
     reader: Option<Reader<Vec<u8>>>,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct AsnInfo {
+    pub number: u32,
+    pub organization: String,
+}
+
 impl AsnLookup {
     pub fn new(db_path: Option<&str>) -> Self {
         let reader = db_path.and_then(|path| match Reader::open_readfile(path) {
@@ -19,12 +25,19 @@ impl AsnLookup {
         Self { reader }
     }
 
-    pub fn lookup_asn(&self, ip: IpAddr) -> Option<u32> {
-        self.reader
-            .as_ref()?
-            .lookup::<geoip2::Asn>(ip)
-            .ok()?
-            .autonomous_system_number
+    pub fn lookup_asn_info(&self, ip: IpAddr) -> Option<AsnInfo> {
+        let asn_record = self.reader.as_ref()?.lookup::<geoip2::Asn>(ip).ok()?;
+
+        let number = asn_record.autonomous_system_number?;
+        let organization = asn_record
+            .autonomous_system_organization
+            .unwrap_or("Unknown")
+            .to_string();
+
+        Some(AsnInfo {
+            number,
+            organization,
+        })
     }
 }
 
@@ -37,14 +50,14 @@ mod tests {
     fn test_asn_lookup_no_database() {
         let lookup = AsnLookup::new(None);
         let ip = IpAddr::from_str("8.8.8.8").unwrap();
-        assert_eq!(lookup.lookup_asn(ip), None);
+        assert!(lookup.lookup_asn_info(ip).is_none());
     }
 
     #[test]
     fn test_asn_lookup_invalid_path() {
         let lookup = AsnLookup::new(Some("/nonexistent/path.mmdb"));
         let ip = IpAddr::from_str("8.8.8.8").unwrap();
-        assert_eq!(lookup.lookup_asn(ip), None);
+        assert!(lookup.lookup_asn_info(ip).is_none());
     }
 
     #[test]
@@ -61,12 +74,36 @@ mod tests {
 
         // Test IPv4 lookup - Google's ASN is 15169
         let ipv4 = IpAddr::from_str("8.8.8.8").unwrap();
-        let asn_v4 = lookup.lookup_asn(ipv4);
-        assert_eq!(asn_v4, Some(15169));
+        let asn_info = lookup.lookup_asn_info(ipv4);
+        assert!(asn_info.is_some());
+        assert_eq!(asn_info.unwrap().number, 15169);
 
         // Test IPv6 lookup - Google's ASN is 15169
         let ipv6 = IpAddr::from_str("2001:4860:4860::8888").unwrap();
-        let asn_v6 = lookup.lookup_asn(ipv6);
-        assert_eq!(asn_v6, Some(15169));
+        let asn_info = lookup.lookup_asn_info(ipv6);
+        assert!(asn_info.is_some());
+        assert_eq!(asn_info.unwrap().number, 15169);
+    }
+
+    #[test]
+    fn test_asn_lookup_info_with_real_database() {
+        let lookup = AsnLookup::new(Some("./test_data/test-asn.mmdb"));
+        assert!(lookup.reader.is_some());
+
+        // Test IPv4 lookup with organization info
+        let ipv4 = IpAddr::from_str("8.8.8.8").unwrap();
+        let asn_info = lookup.lookup_asn_info(ipv4);
+        assert!(asn_info.is_some());
+
+        let info = asn_info.unwrap();
+        assert_eq!(info.number, 15169);
+        assert!(info.organization.contains("Google") || !info.organization.is_empty());
+    }
+
+    #[test]
+    fn test_asn_lookup_info_no_database() {
+        let lookup = AsnLookup::new(None);
+        let ip = IpAddr::from_str("8.8.8.8").unwrap();
+        assert!(lookup.lookup_asn_info(ip).is_none());
     }
 }

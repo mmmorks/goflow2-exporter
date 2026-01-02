@@ -154,7 +154,7 @@ impl Metrics {
                 registry,
                 "by_src_asn",
                 "by source ASN",
-                &["src_asn"],
+                &["src_asn", "src_asn_org"],
                 ttl,
                 clock.clone()
             ),
@@ -162,7 +162,7 @@ impl Metrics {
                 registry,
                 "by_dst_asn",
                 "by destination ASN",
-                &["dst_asn"],
+                &["dst_asn", "dst_asn_org"],
                 ttl,
                 clock
             ),
@@ -242,18 +242,20 @@ impl Metrics {
         // ASN metrics
         if let Some(src_addr) = &flow.src_addr {
             if let Ok(ip) = src_addr.parse::<IpAddr>() {
-                if let Some(asn) = self.asn_lookup.lookup_asn(ip) {
-                    let asn_str = asn.to_string();
-                    record_with_tracker(&self.by_src_asn, &asn_str, &[&asn_str]);
+                if let Some(asn_info) = self.asn_lookup.lookup_asn_info(ip) {
+                    let asn_str = asn_info.number.to_string();
+                    let key = format!("{}|{}", asn_info.number, asn_info.organization);
+                    record_with_tracker(&self.by_src_asn, &key, &[&asn_str, &asn_info.organization]);
                 }
             }
         }
 
         if let Some(dst_addr) = &flow.dst_addr {
             if let Ok(ip) = dst_addr.parse::<IpAddr>() {
-                if let Some(asn) = self.asn_lookup.lookup_asn(ip) {
-                    let asn_str = asn.to_string();
-                    record_with_tracker(&self.by_dst_asn, &asn_str, &[&asn_str]);
+                if let Some(asn_info) = self.asn_lookup.lookup_asn_info(ip) {
+                    let asn_str = asn_info.number.to_string();
+                    let key = format!("{}|{}", asn_info.number, asn_info.organization);
+                    record_with_tracker(&self.by_dst_asn, &key, &[&asn_str, &asn_info.organization]);
                 }
             }
         }
