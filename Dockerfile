@@ -13,7 +13,7 @@ USER root
 
 RUN apk add --no-cache ca-certificates
 
-COPY --from=builder /app/target/release/goflow2-exporter /usr/local/bin/goflow2-exporter
+COPY --from=builder /app/target/release/goflow2-exporter /app/goflow2-exporter
 COPY data/ /app/data/
 
 WORKDIR /app
@@ -23,4 +23,4 @@ EXPOSE 9090
 
 ENV RUST_LOG=info
 
-CMD ["/bin/sh", "-c", "goflow2 -listen netflow://:2055 | goflow2-exporter"]
+CMD ["/bin/sh", "-c", "/goflow2 -listen netflow://:2055 | ./goflow2-exporter"]
