@@ -6,12 +6,16 @@ A high-performance Rust application that consumes NetFlow/IPFIX events from gofl
 
 - **Real-time Flow Processing**: Consumes goflow2 JSON output via stdin
 - **Prometheus Integration**: Exposes comprehensive metrics on port 9090
+- **ASN Enrichment**: Automatic IP-to-ASN lookup with organization names using MaxMind GeoLite2 ASN database
 - **Multi-dimensional Aggregation**: Track flows, bytes, and packets by:
-  - Protocol (TCP, UDP, etc.)
+  - Protocol (TCP, UDP, ICMP, IPv6-ICMP, etc.)
   - Source and destination addresses
+  - Source and destination ASN (with organization names)
   - Sampler address (router)
   - Flow type (NetFlow v5/v9, IPFIX, sFlow)
-- **Sampling Rate Correction**: Automatically scales byte and packet counts based on sampling rates
+- **Bounded Metric Cardinality**: Automatic cardinality tracking with configurable limits to prevent metric explosion
+- **Sampling Rate Correction**: Automatically scales byte and packet counts based on sampling rates (including sampling_rate=0 handling)
+- **Active Flow Tracking**: Monitors currently active flows with automatic expiration
 - **Async Processing**: Built on Tokio for efficient concurrent operations
 - **Error Tracking**: Parse error metrics for monitoring data quality
 
@@ -20,6 +24,7 @@ A high-performance Rust application that consumes NetFlow/IPFIX events from gofl
 - Rust 1.70 or later
 - goflow2 installed and configured
 - A NetFlow/IPFIX source (e.g., Mikrotik router)
+- (Optional) MaxMind GeoLite2 ASN database for ASN enrichment
 
 ## Installation
 
@@ -38,6 +43,16 @@ Pipe goflow2 output directly to the aggregator:
 ```bash
 goflow2 -listen netflow://:2055 | ./target/release/goflow2-exporter
 ```
+
+### With ASN Enrichment
+
+To enable ASN lookups with organization names, set the `ASN_DB_PATH` environment variable:
+
+```bash
+ASN_DB_PATH=/path/to/GeoLite2-ASN.mmdb goflow2 -listen netflow://:2055 | ./target/release/goflow2-exporter
+```
+
+The ASN database is bundled in the Docker image at `/app/data/GeoLite2-ASN.mmdb` by default.
 
 ### With Logging
 
