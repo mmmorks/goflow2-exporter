@@ -6,6 +6,8 @@ Cargo.lock
 
 # Data
 data/
+coverage/
+*.lic
 
 # IDE
 .idea/
