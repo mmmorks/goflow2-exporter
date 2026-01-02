@@ -138,16 +138,13 @@ mod tests {
     }
 
     fn create_test_counter() -> IntCounterVec {
-        IntCounterVec::new(
-            Opts::new("test_counter", "Test counter"),
-            &["key"],
-        )
-        .unwrap()
+        IntCounterVec::new(Opts::new("test_counter", "Test counter"), &["key"]).unwrap()
     }
 
     #[test]
     fn test_basic_increment() {
-        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
+        let tracker =
+            BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
         let counter = create_test_counter();
 
         tracker.increment("key1", &counter, &["key1"], 10);
@@ -160,7 +157,8 @@ mod tests {
 
     #[test]
     fn test_multiple_keys() {
-        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
+        let tracker =
+            BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
         let counter = create_test_counter();
 
         tracker.increment("key1", &counter, &["key1"], 10);
@@ -260,7 +258,8 @@ mod tests {
 
     #[test]
     fn test_cleanup_with_no_expired_entries() {
-        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
+        let tracker =
+            BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
         let counter = create_test_counter();
 
         tracker.increment("key1", &counter, &["key1"], 10);
@@ -289,13 +288,11 @@ mod tests {
 
     #[test]
     fn test_prometheus_counter_increments_correctly() {
-        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
+        let tracker =
+            BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
         let registry = Registry::new();
-        let counter = IntCounterVec::new(
-            Opts::new("test_metric", "Test metric"),
-            &["key"],
-        )
-        .unwrap();
+        let counter =
+            IntCounterVec::new(Opts::new("test_metric", "Test metric"), &["key"]).unwrap();
         registry.register(Box::new(counter.clone())).unwrap();
 
         tracker.increment("key1", &counter, &["key1"], 10);

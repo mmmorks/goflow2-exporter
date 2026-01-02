@@ -8,21 +8,21 @@ pub struct AsnLookup {
 
 impl AsnLookup {
     pub fn new(db_path: Option<&str>) -> Self {
-        let reader = db_path.and_then(|path| {
-            match Reader::open_readfile(path) {
-                Ok(r) => Some(r),
-                Err(e) => {
-                    warn!("Failed to load ASN database from {}: {}", path, e);
-                    None
-                }
+        let reader = db_path.and_then(|path| match Reader::open_readfile(path) {
+            Ok(r) => Some(r),
+            Err(e) => {
+                warn!("Failed to load ASN database from {}: {}", path, e);
+                None
             }
         });
-        
+
         Self { reader }
     }
 
     pub fn lookup_asn(&self, ip: IpAddr) -> Option<u32> {
-        self.reader.as_ref()?.lookup::<geoip2::Asn>(ip)
+        self.reader
+            .as_ref()?
+            .lookup::<geoip2::Asn>(ip)
             .ok()?
             .autonomous_system_number
     }
@@ -58,12 +58,12 @@ mod tests {
         // Test with our minimal test database
         let lookup = AsnLookup::new(Some("./test_data/test-asn.mmdb"));
         assert!(lookup.reader.is_some());
-        
+
         // Test IPv4 lookup - Google's ASN is 15169
         let ipv4 = IpAddr::from_str("8.8.8.8").unwrap();
         let asn_v4 = lookup.lookup_asn(ipv4);
         assert_eq!(asn_v4, Some(15169));
-        
+
         // Test IPv6 lookup - Google's ASN is 15169
         let ipv6 = IpAddr::from_str("2001:4860:4860::8888").unwrap();
         let asn_v6 = lookup.lookup_asn(ipv6);

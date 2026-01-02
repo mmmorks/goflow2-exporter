@@ -11,6 +11,7 @@ pub async fn process_stdin(metrics: Arc<Metrics>) -> Result<()> {
     process_lines(reader, metrics).await
 }
 
+#[allow(dead_code)]
 pub async fn process_reader<R: tokio::io::AsyncRead + Unpin>(
     reader: R,
     metrics: Arc<Metrics>,

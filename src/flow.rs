@@ -75,9 +75,9 @@ mod tests {
     #[test]
     fn test_deserialize_sample_flow() {
         let json = r#"{"type":"IPFIX","time_received_ns":1767324720787460121,"sequence_num":65361,"sampling_rate":0,"sampler_address":"192.168.88.1","time_flow_start_ns":1767324720000000000,"time_flow_end_ns":1767324720000000000,"bytes":143,"packets":1,"src_addr":"192.168.89.2","dst_addr":"192.168.88.30","etype":"IPv4","proto":"UDP","src_port":53,"dst_port":55743,"in_if":11,"out_if":12,"src_mac":"42:61:64:55:53:42","dst_mac":"48:6f:73:74:50:43"}"#;
-        
+
         let flow: FlowMessage = serde_json::from_str(json).unwrap();
-        
+
         assert_eq!(flow.flow_type, Some("IPFIX".to_string()));
         assert_eq!(flow.bytes, Some(143));
         assert_eq!(flow.packets, Some(1));

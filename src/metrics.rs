@@ -4,9 +4,7 @@ use crate::flow::FlowMessage;
 use anyhow::Result;
 use axum::{routing::get, Router};
 use parking_lot::RwLock;
-use prometheus::{
-    Encoder, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder,
-};
+use prometheus::{Encoder, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -39,11 +37,30 @@ macro_rules! gauge {
 macro_rules! metric_group {
     ($registry:expr, $prefix:expr, $help_prefix:expr, $labels:expr, $ttl:expr, $clock:expr) => {{
         MetricGroup {
-            flows: counter!($registry, concat!("goflow_flows_", $prefix, "_total"), concat!("Flows ", $help_prefix), $labels),
-            bytes: counter!($registry, concat!("goflow_bytes_", $prefix, "_total"), concat!("Bytes ", $help_prefix), $labels),
-            packets: counter!($registry, concat!("goflow_packets_", $prefix, "_total"), concat!("Packets ", $help_prefix), $labels),
+            flows: counter!(
+                $registry,
+                concat!("goflow_flows_", $prefix, "_total"),
+                concat!("Flows ", $help_prefix),
+                $labels
+            ),
+            bytes: counter!(
+                $registry,
+                concat!("goflow_bytes_", $prefix, "_total"),
+                concat!("Bytes ", $help_prefix),
+                $labels
+            ),
+            packets: counter!(
+                $registry,
+                concat!("goflow_packets_", $prefix, "_total"),
+                concat!("Packets ", $help_prefix),
+                $labels
+            ),
             tracker: TrackerGroup {
-                tracker: Arc::new(BoundedMetricTracker::new(DEFAULT_MAX_CARDINALITY, $ttl, $clock)),
+                tracker: Arc::new(BoundedMetricTracker::new(
+                    DEFAULT_MAX_CARDINALITY,
+                    $ttl,
+                    $clock,
+                )),
                 last_evictions: RwLock::default(),
             },
         }
@@ -93,18 +110,87 @@ impl Metrics {
         let ttl = Duration::from_secs(DEFAULT_FLOW_TTL_SECONDS);
 
         Self {
-            total: metric_group!(registry, "total", "total", &["sampler_address", "flow_type"], ttl, clock.clone()),
-            by_protocol: metric_group!(registry, "by_protocol", "by protocol", &["protocol"], ttl, clock.clone()),
-            by_sampler: metric_group!(registry, "by_sampler", "by sampler", &["sampler_address"], ttl, clock.clone()),
-            by_src_addr: metric_group!(registry, "by_src_addr", "by source address", &["src_addr"], ttl, clock.clone()),
-            by_dst_addr: metric_group!(registry, "by_dst_addr", "by destination address", &["dst_addr"], ttl, clock.clone()),
-            by_src_asn: metric_group!(registry, "by_src_asn", "by source ASN", &["src_asn"], ttl, clock.clone()),
-            by_dst_asn: metric_group!(registry, "by_dst_asn", "by destination ASN", &["dst_asn"], ttl, clock),
+            total: metric_group!(
+                registry,
+                "total",
+                "total",
+                &["sampler_address", "flow_type"],
+                ttl,
+                clock.clone()
+            ),
+            by_protocol: metric_group!(
+                registry,
+                "by_protocol",
+                "by protocol",
+                &["protocol"],
+                ttl,
+                clock.clone()
+            ),
+            by_sampler: metric_group!(
+                registry,
+                "by_sampler",
+                "by sampler",
+                &["sampler_address"],
+                ttl,
+                clock.clone()
+            ),
+            by_src_addr: metric_group!(
+                registry,
+                "by_src_addr",
+                "by source address",
+                &["src_addr"],
+                ttl,
+                clock.clone()
+            ),
+            by_dst_addr: metric_group!(
+                registry,
+                "by_dst_addr",
+                "by destination address",
+                &["dst_addr"],
+                ttl,
+                clock.clone()
+            ),
+            by_src_asn: metric_group!(
+                registry,
+                "by_src_asn",
+                "by source ASN",
+                &["src_asn"],
+                ttl,
+                clock.clone()
+            ),
+            by_dst_asn: metric_group!(
+                registry,
+                "by_dst_asn",
+                "by destination ASN",
+                &["dst_asn"],
+                ttl,
+                clock
+            ),
 
-            parse_errors_total: counter!(registry, "goflow_parse_errors_total", "Total number of parse errors", &["error_type"]),
-            active_flows_gauge: gauge!(registry, "goflow_active_flows", "Active flows by sampler", &["sampler_address"]),
-            cardinality_gauge: gauge!(registry, "goflow_metric_cardinality", "Current cardinality of bounded metrics", &["metric_type"]),
-            evictions_total: counter!(registry, "goflow_evictions_total", "Total number of evicted metric entries", &["metric_type"]),
+            parse_errors_total: counter!(
+                registry,
+                "goflow_parse_errors_total",
+                "Total number of parse errors",
+                &["error_type"]
+            ),
+            active_flows_gauge: gauge!(
+                registry,
+                "goflow_active_flows",
+                "Active flows by sampler",
+                &["sampler_address"]
+            ),
+            cardinality_gauge: gauge!(
+                registry,
+                "goflow_metric_cardinality",
+                "Current cardinality of bounded metrics",
+                &["metric_type"]
+            ),
+            evictions_total: counter!(
+                registry,
+                "goflow_evictions_total",
+                "Total number of evicted metric entries",
+                &["metric_type"]
+            ),
 
             registry,
             asn_lookup: AsnLookup::new(asn_db_path),
@@ -122,13 +208,26 @@ impl Metrics {
 
         // Helper to record with tracker (all groups now use trackers)
         let record_with_tracker = |group: &MetricGroup, key: &str, labels: &[&str]| {
-            group.tracker.tracker.increment(key, &group.flows, labels, 1);
-            group.tracker.tracker.increment(key, &group.bytes, labels, scaled_bytes);
-            group.tracker.tracker.increment(key, &group.packets, labels, scaled_packets);
+            group
+                .tracker
+                .tracker
+                .increment(key, &group.flows, labels, 1);
+            group
+                .tracker
+                .tracker
+                .increment(key, &group.bytes, labels, scaled_bytes);
+            group
+                .tracker
+                .tracker
+                .increment(key, &group.packets, labels, scaled_packets);
         };
 
         // Record all metrics using trackers
-        record_with_tracker(&self.total, &format!("{}|{}", sampler_address, flow_type), &[sampler_address, flow_type]);
+        record_with_tracker(
+            &self.total,
+            &format!("{}|{}", sampler_address, flow_type),
+            &[sampler_address, flow_type],
+        );
         record_with_tracker(&self.by_protocol, protocol, &[protocol]);
         record_with_tracker(&self.by_sampler, sampler_address, &[sampler_address]);
 
@@ -168,29 +267,41 @@ impl Metrics {
     }
 
     pub fn increment_parse_errors(&self) {
-        self.parse_errors_total
-            .with_label_values(&["json"])
-            .inc();
+        self.parse_errors_total.with_label_values(&["json"]).inc();
     }
 
     pub fn cleanup_expired_flows(&self) {
-        let groups = [(&self.total, "total"), (&self.by_protocol, "protocol"), (&self.by_sampler, "sampler"),
-                     (&self.by_src_addr, "src_addr"), (&self.by_dst_addr, "dst_addr"), 
-                     (&self.by_src_asn, "src_asn"), (&self.by_dst_asn, "dst_asn")];
-        
+        let groups = [
+            (&self.total, "total"),
+            (&self.by_protocol, "protocol"),
+            (&self.by_sampler, "sampler"),
+            (&self.by_src_addr, "src_addr"),
+            (&self.by_dst_addr, "dst_addr"),
+            (&self.by_src_asn, "src_asn"),
+            (&self.by_dst_asn, "dst_asn"),
+        ];
+
         for (group, metric_type) in groups {
             let removed = group.tracker.tracker.cleanup_expired();
             if removed > 0 {
-                self.evictions_total.with_label_values(&[metric_type]).inc_by(removed as u64);
+                self.evictions_total
+                    .with_label_values(&[metric_type])
+                    .inc_by(removed as u64);
             }
         }
     }
 
     fn update_cardinality_metrics(&self) {
-        let groups = [(&self.total, "total"), (&self.by_protocol, "protocol"), (&self.by_sampler, "sampler"),
-                     (&self.by_src_addr, "src_addr"), (&self.by_dst_addr, "dst_addr"),
-                     (&self.by_src_asn, "src_asn"), (&self.by_dst_asn, "dst_asn")];
-        
+        let groups = [
+            (&self.total, "total"),
+            (&self.by_protocol, "protocol"),
+            (&self.by_sampler, "sampler"),
+            (&self.by_src_addr, "src_addr"),
+            (&self.by_dst_addr, "dst_addr"),
+            (&self.by_src_asn, "src_asn"),
+            (&self.by_dst_asn, "dst_asn"),
+        ];
+
         for (group, metric_type) in groups {
             self.cardinality_gauge
                 .with_label_values(&[metric_type])
@@ -199,17 +310,25 @@ impl Metrics {
     }
 
     fn update_eviction_metrics(&self) {
-        let groups = [(&self.total, "total"), (&self.by_protocol, "protocol"), (&self.by_sampler, "sampler"),
-                     (&self.by_src_addr, "src_addr"), (&self.by_dst_addr, "dst_addr"),
-                     (&self.by_src_asn, "src_asn"), (&self.by_dst_asn, "dst_asn")];
-        
+        let groups = [
+            (&self.total, "total"),
+            (&self.by_protocol, "protocol"),
+            (&self.by_sampler, "sampler"),
+            (&self.by_src_addr, "src_addr"),
+            (&self.by_dst_addr, "dst_addr"),
+            (&self.by_src_asn, "src_asn"),
+            (&self.by_dst_asn, "dst_asn"),
+        ];
+
         for (group, metric_type) in groups {
             let current_evicted = group.tracker.tracker.total_evicted();
             let mut last_evicted = group.tracker.last_evictions.write();
-            
+
             if current_evicted > *last_evicted {
                 let delta = current_evicted - *last_evicted;
-                self.evictions_total.with_label_values(&[metric_type]).inc_by(delta);
+                self.evictions_total
+                    .with_label_values(&[metric_type])
+                    .inc_by(delta);
                 *last_evicted = current_evicted;
             }
         }
@@ -230,12 +349,12 @@ impl Metrics {
     fn get_tracker_cardinality(&self, group: &MetricGroup) -> usize {
         group.tracker.tracker.current_cardinality()
     }
-    
+
     #[cfg(test)]
     fn get_tracker_evicted(&self, group: &MetricGroup) -> u64 {
         group.tracker.tracker.total_evicted()
     }
-    
+
     #[cfg(test)]
     fn get_tracker_entry(&self, group: &MetricGroup, key: &str) -> bool {
         group.tracker.tracker.get_entry(key).is_some()
@@ -342,8 +461,8 @@ mod tests {
             metrics.record_flow(&flow);
         }
 
-        assert!(metrics.get_tracker_cardinality(&metrics.by_src_addr) <= DEFAULT_MAX_IP_CARDINALITY);
-        assert!(metrics.get_tracker_cardinality(&metrics.by_dst_addr) <= DEFAULT_MAX_IP_CARDINALITY);
+        assert!(metrics.get_tracker_cardinality(&metrics.by_src_addr) <= DEFAULT_MAX_CARDINALITY);
+        assert!(metrics.get_tracker_cardinality(&metrics.by_dst_addr) <= DEFAULT_MAX_CARDINALITY);
         assert!(metrics.get_tracker_evicted(&metrics.by_src_addr) > 0);
     }
 
@@ -368,11 +487,8 @@ mod tests {
         // Manually insert entries with very short TTL by accessing the tracker
         // We need to trigger actual evictions by waiting for entries to expire
         for i in 0..5 {
-            let flow = create_test_flow(
-                &format!("10.0.0.{}", i),
-                &format!("192.168.0.{}", i),
-                1000,
-            );
+            let flow =
+                create_test_flow(&format!("10.0.0.{}", i), &format!("192.168.0.{}", i), 1000);
             metrics.record_flow(&flow);
         }
 
@@ -397,7 +513,7 @@ mod tests {
         let metrics = Metrics::new(None);
 
         // Fill beyond the cardinality limit to trigger evictions
-        for i in 0..(DEFAULT_MAX_IP_CARDINALITY + 100) {
+        for i in 0..(DEFAULT_MAX_CARDINALITY + 100) {
             let flow = create_test_flow(
                 &format!("10.{}.{}.{}", i / 65536, (i / 256) % 256, i % 256),
                 &format!("192.{}.{}.{}", i / 65536, (i / 256) % 256, i % 256),
@@ -419,8 +535,8 @@ mod tests {
         // The evictions_total metric should be present if any evictions occurred
         // during the cleanup (though cardinality-based evictions happen during record_flow)
         // Let's just verify the metrics are being tracked
-        assert!(metrics.get_tracker_cardinality(&metrics.by_src_addr) <= DEFAULT_MAX_IP_CARDINALITY);
-        assert!(metrics.get_tracker_cardinality(&metrics.by_dst_addr) <= DEFAULT_MAX_IP_CARDINALITY);
+        assert!(metrics.get_tracker_cardinality(&metrics.by_src_addr) <= DEFAULT_MAX_CARDINALITY);
+        assert!(metrics.get_tracker_cardinality(&metrics.by_dst_addr) <= DEFAULT_MAX_CARDINALITY);
     }
 
     #[test]
@@ -428,11 +544,8 @@ mod tests {
         let metrics = Metrics::new(None);
 
         for i in 0..5 {
-            let flow = create_test_flow(
-                &format!("10.0.0.{}", i),
-                &format!("192.168.0.{}", i),
-                1000,
-            );
+            let flow =
+                create_test_flow(&format!("10.0.0.{}", i), &format!("192.168.0.{}", i), 1000);
             metrics.record_flow(&flow);
         }
 
@@ -451,11 +564,8 @@ mod tests {
 
         // Record some flows
         for i in 0..5 {
-            let flow = create_test_flow(
-                &format!("10.0.0.{}", i),
-                &format!("192.168.0.{}", i),
-                1000,
-            );
+            let flow =
+                create_test_flow(&format!("10.0.0.{}", i), &format!("192.168.0.{}", i), 1000);
             metrics.record_flow(&flow);
         }
 
@@ -524,11 +634,8 @@ mod tests {
         }
 
         for i in 0..15000 {
-            let small_flow = create_test_flow(
-                &format!("192.168.{}.{}", i / 256, i % 256),
-                "10.0.0.3",
-                100,
-            );
+            let small_flow =
+                create_test_flow(&format!("192.168.{}.{}", i / 256, i % 256), "10.0.0.3", 100);
             metrics.record_flow(&small_flow);
         }
 
