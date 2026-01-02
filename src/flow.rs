@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FlowMessage {
     #[serde(rename = "type")]
     pub flow_type: Option<String>,
@@ -116,31 +116,5 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(flow.scaled_packets(), 100);
-    }
-}
-
-impl Default for FlowMessage {
-    fn default() -> Self {
-        Self {
-            flow_type: None,
-            time_received_ns: None,
-            sequence_num: None,
-            sampling_rate: None,
-            sampler_address: None,
-            time_flow_start_ns: None,
-            time_flow_end_ns: None,
-            bytes: None,
-            packets: None,
-            src_addr: None,
-            dst_addr: None,
-            src_port: None,
-            dst_port: None,
-            etype: None,
-            proto: None,
-            src_mac: None,
-            dst_mac: None,
-            in_if: None,
-            out_if: None,
-        }
     }
 }
