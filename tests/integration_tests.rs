@@ -153,6 +153,6 @@ async fn test_application_components() {
         .unwrap();
 
     let output = String::from_utf8(metrics.gather()).unwrap();
-    assert!(output.contains("goflow_flows_total"));
+    assert!(output.contains("goflow_flows_all_total"));
     assert!(output.contains("192.168.88.1"));
 }

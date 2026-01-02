@@ -64,7 +64,7 @@ mod tests {
 
         // Verify metrics were recorded
         let output = String::from_utf8(metrics.gather()).unwrap();
-        assert!(output.contains("goflow_flows_total"));
+        assert!(output.contains("goflow_flows_all_total"));
     }
 
     #[tokio::test]
@@ -109,7 +109,7 @@ mod tests {
 
         let output = String::from_utf8(metrics.gather()).unwrap();
         // Should have both valid flows and parse errors
-        assert!(output.contains("goflow_flows_total"));
+        assert!(output.contains("goflow_flows_all_total"));
         assert!(output.contains("goflow_parse_errors_total"));
     }
 }

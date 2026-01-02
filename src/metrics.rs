@@ -112,8 +112,8 @@ impl Metrics {
         Self {
             total: metric_group!(
                 registry,
-                "total",
-                "total",
+                "all",
+                "all",
                 &["sampler_address", "flow_type"],
                 ttl,
                 clock.clone()
@@ -274,7 +274,7 @@ impl Metrics {
 
     pub fn cleanup_expired_flows(&self) {
         let groups = [
-            (&self.total, "total"),
+            (&self.total, "all"),
             (&self.by_protocol, "protocol"),
             (&self.by_sampler, "sampler"),
             (&self.by_src_addr, "src_addr"),
@@ -295,7 +295,7 @@ impl Metrics {
 
     fn update_cardinality_metrics(&self) {
         let groups = [
-            (&self.total, "total"),
+            (&self.total, "all"),
             (&self.by_protocol, "protocol"),
             (&self.by_sampler, "sampler"),
             (&self.by_src_addr, "src_addr"),
@@ -313,7 +313,7 @@ impl Metrics {
 
     fn update_eviction_metrics(&self) {
         let groups = [
-            (&self.total, "total"),
+            (&self.total, "all"),
             (&self.by_protocol, "protocol"),
             (&self.by_sampler, "sampler"),
             (&self.by_src_addr, "src_addr"),
