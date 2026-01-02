@@ -11,6 +11,14 @@ pub async fn process_stdin(metrics: Arc<Metrics>) -> Result<()> {
     process_lines(reader, metrics).await
 }
 
+pub async fn process_reader<R: tokio::io::AsyncRead + Unpin>(
+    reader: R,
+    metrics: Arc<Metrics>,
+) -> Result<()> {
+    let buf_reader = BufReader::new(reader);
+    process_lines(buf_reader, metrics).await
+}
+
 async fn process_lines<R: tokio::io::AsyncRead + Unpin>(
     reader: BufReader<R>,
     metrics: Arc<Metrics>,
@@ -55,7 +63,7 @@ mod tests {
 
         // Verify metrics were recorded
         let output = String::from_utf8(metrics.gather()).unwrap();
-        assert!(output.contains("goflow_flows__total"));
+        assert!(output.contains("goflow_flows_total"));
     }
 
     #[tokio::test]
@@ -100,7 +108,7 @@ mod tests {
 
         let output = String::from_utf8(metrics.gather()).unwrap();
         // Should have both valid flows and parse errors
-        assert!(output.contains("goflow_flows__total"));
+        assert!(output.contains("goflow_flows_total"));
         assert!(output.contains("goflow_parse_errors_total"));
     }
 }

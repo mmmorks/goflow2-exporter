@@ -1,4 +1,5 @@
 use std::fs;
+use std::sync::Arc;
 use goflow2_exporter::flow::FlowMessage;
 use goflow2_exporter::metrics::Metrics;
 
@@ -126,4 +127,28 @@ fn test_source_asn_mapping() {
     assert!(registry_output.contains("15169"));
     assert!(registry_output.contains("bytes_by_src_asn"));
     assert!(registry_output.contains("packets_by_src_asn"));
+}
+
+#[tokio::test]
+async fn test_application_components() {
+    use std::io::Cursor;
+    use goflow2_exporter::stdin_reader;
+    
+    let metrics = Arc::new(Metrics::new(None));
+    
+    // Test JSON parsing first
+    let test_json = r#"{"type":"IPFIX","time_received_ns":1767324720787460121,"sequence_num":65361,"sampling_rate":1,"sampler_address":"192.168.88.1","time_flow_start_ns":1767324720000000000,"time_flow_end_ns":1767324720000000000,"bytes":1000,"packets":10,"src_addr":"10.0.0.1","dst_addr":"10.0.0.2","etype":"IPv4","proto":"TCP","src_port":80,"dst_port":443}"#;
+    
+    // Test direct parsing
+    let flow: FlowMessage = serde_json::from_str(test_json).unwrap();
+    assert_eq!(flow.bytes, Some(1000));
+    
+    // Test with newline (as stdin_reader expects)
+    let test_data = format!("{}\n", test_json);
+    let reader = Cursor::new(test_data);
+    stdin_reader::process_reader(reader, metrics.clone()).await.unwrap();
+    
+    let output = String::from_utf8(metrics.gather()).unwrap();
+    assert!(output.contains("goflow_flows_total"));
+    assert!(output.contains("192.168.88.1"));
 }

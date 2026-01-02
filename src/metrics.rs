@@ -14,8 +14,7 @@ use std::time::Duration;
 use tracing::info;
 
 const DEFAULT_METRICS_PORT: u16 = 9090;
-const DEFAULT_MAX_IP_CARDINALITY: usize = 10_000;
-const DEFAULT_MAX_ASN_CARDINALITY: usize = 1_000;
+const DEFAULT_MAX_CARDINALITY: usize = 10_000;
 const DEFAULT_FLOW_TTL_SECONDS: u64 = 3600;
 
 // Macro to create and register a counter metric
@@ -36,22 +35,17 @@ macro_rules! gauge {
     }};
 }
 
-// Simplified metric group - always includes flows, bytes, and packets
+// All metric groups use the same cardinality limit
 macro_rules! metric_group {
-    ($registry:expr, $prefix:expr, $help_prefix:expr, $labels:expr) => {{
+    ($registry:expr, $prefix:expr, $help_prefix:expr, $labels:expr, $ttl:expr, $clock:expr) => {{
         MetricGroup {
             flows: counter!($registry, concat!("goflow_flows_", $prefix, "_total"), concat!("Flows ", $help_prefix), $labels),
             bytes: counter!($registry, concat!("goflow_bytes_", $prefix, "_total"), concat!("Bytes ", $help_prefix), $labels),
             packets: counter!($registry, concat!("goflow_packets_", $prefix, "_total"), concat!("Packets ", $help_prefix), $labels),
-            tracker: None,
-        }
-    }};
-    ($registry:expr, $prefix:expr, $help_prefix:expr, $labels:expr, tracker: $tracker:expr) => {{
-        MetricGroup {
-            flows: counter!($registry, concat!("goflow_flows_", $prefix, "_total"), concat!("Flows ", $help_prefix), $labels),
-            bytes: counter!($registry, concat!("goflow_bytes_", $prefix, "_total"), concat!("Bytes ", $help_prefix), $labels),
-            packets: counter!($registry, concat!("goflow_packets_", $prefix, "_total"), concat!("Packets ", $help_prefix), $labels),
-            tracker: Some($tracker),
+            tracker: TrackerGroup {
+                tracker: Arc::new(BoundedMetricTracker::new(DEFAULT_MAX_CARDINALITY, $ttl, $clock)),
+                last_evictions: RwLock::default(),
+            },
         }
     }};
 }
@@ -60,7 +54,7 @@ struct MetricGroup {
     flows: IntCounterVec,
     bytes: IntCounterVec,
     packets: IntCounterVec,
-    tracker: Option<TrackerGroup>,
+    tracker: TrackerGroup,
 }
 
 struct TrackerGroup {
@@ -98,31 +92,14 @@ impl Metrics {
         let registry = Registry::new();
         let ttl = Duration::from_secs(DEFAULT_FLOW_TTL_SECONDS);
 
-        let src_addr_tracker = TrackerGroup {
-            tracker: Arc::new(BoundedMetricTracker::new(DEFAULT_MAX_IP_CARDINALITY, ttl, clock.clone())),
-            last_evictions: RwLock::default(),
-        };
-        let dst_addr_tracker = TrackerGroup {
-            tracker: Arc::new(BoundedMetricTracker::new(DEFAULT_MAX_IP_CARDINALITY, ttl, clock.clone())),
-            last_evictions: RwLock::default(),
-        };
-        let src_asn_tracker = TrackerGroup {
-            tracker: Arc::new(BoundedMetricTracker::new(DEFAULT_MAX_ASN_CARDINALITY, ttl, clock.clone())),
-            last_evictions: RwLock::default(),
-        };
-        let dst_asn_tracker = TrackerGroup {
-            tracker: Arc::new(BoundedMetricTracker::new(DEFAULT_MAX_ASN_CARDINALITY, ttl, clock)),
-            last_evictions: RwLock::default(),
-        };
-
         Self {
-            total: metric_group!(registry, "", "total", &["sampler_address", "flow_type"]),
-            by_protocol: metric_group!(registry, "by_protocol", "by protocol", &["protocol"]),
-            by_sampler: metric_group!(registry, "by_sampler", "by sampler", &["sampler_address"]),
-            by_src_addr: metric_group!(registry, "by_src_addr", "by source address", &["src_addr"], tracker: src_addr_tracker),
-            by_dst_addr: metric_group!(registry, "by_dst_addr", "by destination address", &["dst_addr"], tracker: dst_addr_tracker),
-            by_src_asn: metric_group!(registry, "by_src_asn", "by source ASN", &["src_asn"], tracker: src_asn_tracker),
-            by_dst_asn: metric_group!(registry, "by_dst_asn", "by destination ASN", &["dst_asn"], tracker: dst_asn_tracker),
+            total: metric_group!(registry, "total", "total", &["sampler_address", "flow_type"], ttl, clock.clone()),
+            by_protocol: metric_group!(registry, "by_protocol", "by protocol", &["protocol"], ttl, clock.clone()),
+            by_sampler: metric_group!(registry, "by_sampler", "by sampler", &["sampler_address"], ttl, clock.clone()),
+            by_src_addr: metric_group!(registry, "by_src_addr", "by source address", &["src_addr"], ttl, clock.clone()),
+            by_dst_addr: metric_group!(registry, "by_dst_addr", "by destination address", &["dst_addr"], ttl, clock.clone()),
+            by_src_asn: metric_group!(registry, "by_src_asn", "by source ASN", &["src_asn"], ttl, clock.clone()),
+            by_dst_asn: metric_group!(registry, "by_dst_asn", "by destination ASN", &["dst_asn"], ttl, clock),
 
             parse_errors_total: counter!(registry, "goflow_parse_errors_total", "Total number of parse errors", &["error_type"]),
             active_flows_gauge: gauge!(registry, "goflow_active_flows", "Active flows by sampler", &["sampler_address"]),
@@ -143,26 +120,17 @@ impl Metrics {
         let scaled_bytes = flow.scaled_bytes();
         let scaled_packets = flow.scaled_packets();
 
-        // Helper to record metrics for a group
-        let record_metrics = |group: &MetricGroup, labels: &[&str]| {
-            group.flows.with_label_values(labels).inc();
-            group.bytes.with_label_values(labels).inc_by(scaled_bytes);
-            group.packets.with_label_values(labels).inc_by(scaled_packets);
-        };
-
-        // Helper to record with tracker
+        // Helper to record with tracker (all groups now use trackers)
         let record_with_tracker = |group: &MetricGroup, key: &str, labels: &[&str]| {
-            if let Some(ref tracker_group) = group.tracker {
-                tracker_group.tracker.increment(key, &group.flows, labels, 1);
-                tracker_group.tracker.increment(key, &group.bytes, labels, scaled_bytes);
-                tracker_group.tracker.increment(key, &group.packets, labels, scaled_packets);
-            }
+            group.tracker.tracker.increment(key, &group.flows, labels, 1);
+            group.tracker.tracker.increment(key, &group.bytes, labels, scaled_bytes);
+            group.tracker.tracker.increment(key, &group.packets, labels, scaled_packets);
         };
 
-        // Record all metrics
-        record_metrics(&self.total, &[sampler_address, flow_type]);
-        record_metrics(&self.by_protocol, &[protocol]);
-        record_metrics(&self.by_sampler, &[sampler_address]);
+        // Record all metrics using trackers
+        record_with_tracker(&self.total, &format!("{}|{}", sampler_address, flow_type), &[sampler_address, flow_type]);
+        record_with_tracker(&self.by_protocol, protocol, &[protocol]);
+        record_with_tracker(&self.by_sampler, sampler_address, &[sampler_address]);
 
         if let Some(src_addr) = &flow.src_addr {
             record_with_tracker(&self.by_src_addr, src_addr, &[src_addr]);
@@ -206,46 +174,43 @@ impl Metrics {
     }
 
     pub fn cleanup_expired_flows(&self) {
-        let groups = [(&self.by_src_addr, "src_addr"), (&self.by_dst_addr, "dst_addr"), 
+        let groups = [(&self.total, "total"), (&self.by_protocol, "protocol"), (&self.by_sampler, "sampler"),
+                     (&self.by_src_addr, "src_addr"), (&self.by_dst_addr, "dst_addr"), 
                      (&self.by_src_asn, "src_asn"), (&self.by_dst_asn, "dst_asn")];
         
         for (group, metric_type) in groups {
-            if let Some(ref tracker_group) = group.tracker {
-                let removed = tracker_group.tracker.cleanup_expired();
-                if removed > 0 {
-                    self.evictions_total.with_label_values(&[metric_type]).inc_by(removed as u64);
-                }
+            let removed = group.tracker.tracker.cleanup_expired();
+            if removed > 0 {
+                self.evictions_total.with_label_values(&[metric_type]).inc_by(removed as u64);
             }
         }
     }
 
     fn update_cardinality_metrics(&self) {
-        let groups = [(&self.by_src_addr, "src_addr"), (&self.by_dst_addr, "dst_addr"),
+        let groups = [(&self.total, "total"), (&self.by_protocol, "protocol"), (&self.by_sampler, "sampler"),
+                     (&self.by_src_addr, "src_addr"), (&self.by_dst_addr, "dst_addr"),
                      (&self.by_src_asn, "src_asn"), (&self.by_dst_asn, "dst_asn")];
         
         for (group, metric_type) in groups {
-            if let Some(ref tracker_group) = group.tracker {
-                self.cardinality_gauge
-                    .with_label_values(&[metric_type])
-                    .set(tracker_group.tracker.current_cardinality() as i64);
-            }
+            self.cardinality_gauge
+                .with_label_values(&[metric_type])
+                .set(group.tracker.tracker.current_cardinality() as i64);
         }
     }
 
     fn update_eviction_metrics(&self) {
-        let groups = [(&self.by_src_addr, "src_addr"), (&self.by_dst_addr, "dst_addr"),
+        let groups = [(&self.total, "total"), (&self.by_protocol, "protocol"), (&self.by_sampler, "sampler"),
+                     (&self.by_src_addr, "src_addr"), (&self.by_dst_addr, "dst_addr"),
                      (&self.by_src_asn, "src_asn"), (&self.by_dst_asn, "dst_asn")];
         
         for (group, metric_type) in groups {
-            if let Some(ref tracker_group) = group.tracker {
-                let current_evicted = tracker_group.tracker.total_evicted();
-                let mut last_evicted = tracker_group.last_evictions.write();
-                
-                if current_evicted > *last_evicted {
-                    let delta = current_evicted - *last_evicted;
-                    self.evictions_total.with_label_values(&[metric_type]).inc_by(delta);
-                    *last_evicted = current_evicted;
-                }
+            let current_evicted = group.tracker.tracker.total_evicted();
+            let mut last_evicted = group.tracker.last_evictions.write();
+            
+            if current_evicted > *last_evicted {
+                let delta = current_evicted - *last_evicted;
+                self.evictions_total.with_label_values(&[metric_type]).inc_by(delta);
+                *last_evicted = current_evicted;
             }
         }
     }
@@ -263,17 +228,17 @@ impl Metrics {
 
     #[cfg(test)]
     fn get_tracker_cardinality(&self, group: &MetricGroup) -> usize {
-        group.tracker.as_ref().map(|t| t.tracker.current_cardinality()).unwrap_or(0)
+        group.tracker.tracker.current_cardinality()
     }
     
     #[cfg(test)]
     fn get_tracker_evicted(&self, group: &MetricGroup) -> u64 {
-        group.tracker.as_ref().map(|t| t.tracker.total_evicted()).unwrap_or(0)
+        group.tracker.tracker.total_evicted()
     }
     
     #[cfg(test)]
     fn get_tracker_entry(&self, group: &MetricGroup, key: &str) -> bool {
-        group.tracker.as_ref().map(|t| t.tracker.get_entry(key).is_some()).unwrap_or(false)
+        group.tracker.tracker.get_entry(key).is_some()
     }
 }
 
