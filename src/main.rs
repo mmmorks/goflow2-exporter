@@ -2,6 +2,7 @@ mod asn;
 mod flow;
 mod metrics;
 mod stdin_reader;
+mod bounded_tracker;
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -33,6 +34,16 @@ async fn main() -> Result<()> {
         }
     });
 
+    let metrics_clone = metrics.clone();
+    let cleanup_task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(300));
+        loop {
+            interval.tick().await;
+            info!("Running periodic cleanup of expired flows");
+            metrics_clone.cleanup_expired_flows();
+        }
+    });
+
     let stdin_processor = tokio::spawn(async move {
         if let Err(e) = stdin_reader::process_stdin(metrics).await {
             error!("Stdin processing error: {}", e);
@@ -48,6 +59,9 @@ async fn main() -> Result<()> {
         }
         _ = stdin_processor => {
             error!("Stdin processor stopped unexpectedly");
+        }
+        _ = cleanup_task => {
+            error!("Cleanup task stopped unexpectedly");
         }
     }
 
