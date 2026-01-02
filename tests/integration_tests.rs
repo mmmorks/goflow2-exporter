@@ -1,7 +1,6 @@
 use std::fs;
-use serde_json;
-use goflow2_aggregator::flow::FlowMessage;
-use goflow2_aggregator::metrics::Metrics;
+use goflow2_exporter::flow::FlowMessage;
+use goflow2_exporter::metrics::Metrics;
 
 #[test]
 fn test_parse_sample_data() {
