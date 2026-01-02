@@ -6,12 +6,12 @@
 cargo build --release
 ```
 
-The binary will be at `target/release/goflow2-aggregator`.
+The binary will be at `target/release/goflow2-exporter`.
 
 ## 2. Test with Sample Data
 
 ```bash
-cat examples/sample_flow.json | ./target/release/goflow2-aggregator &
+cat examples/sample_flow.json | ./target/release/goflow2-exporter &
 ```
 
 ## 3. Check Metrics
@@ -27,12 +27,12 @@ curl http://localhost:9090/metrics | grep goflow_
 Build and run the combined goflow2 + aggregator image:
 
 ```bash
-docker build -t goflow2-aggregator .
+docker build -t goflow2-exporter .
 docker run -d \
   -p 2055:2055/udp \
   -p 9090:9090 \
-  --name goflow2-aggregator \
-  goflow2-aggregator
+  --name goflow2-exporter \
+  goflow2-exporter
 ```
 
 ### Option B: Docker Compose (Full Stack with Prometheus & Grafana)
@@ -42,7 +42,7 @@ docker-compose up -d
 ```
 
 This will start:
-- goflow2-aggregator on ports 2055/udp (NetFlow) and 9090 (metrics)
+- goflow2-exporter on ports 2055/udp (NetFlow) and 9090 (metrics)
 - Prometheus on port 9091
 - Grafana on port 3000 (admin/admin)
 
@@ -51,16 +51,16 @@ Access Grafana at http://localhost:3000 and add Prometheus as a data source at h
 ### Option C: Direct Usage (Binary)
 
 ```bash
-goflow2 -listen netflow://:2055 | ./target/release/goflow2-aggregator
+goflow2 -listen netflow://:2055 | ./target/release/goflow2-exporter
 ```
 
 ### Option D: Systemd Service
 
 ```bash
-sudo cp examples/goflow2-aggregator.service /etc/systemd/system/
+sudo cp examples/goflow2-exporter.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable goflow2-aggregator
-sudo systemctl start goflow2-aggregator
+sudo systemctl enable goflow2-exporter
+sudo systemctl start goflow2-exporter
 ```
 
 ## 5. Configure Your Router
@@ -108,7 +108,7 @@ sum by (protocol) (rate(goflow_bytes_by_protocol_total[5m]))
 
 Check application logs:
 ```bash
-journalctl -u goflow2-aggregator -f
+journalctl -u goflow2-exporter -f
 ```
 
 Check for parse errors:
@@ -126,7 +126,7 @@ curl -s http://localhost:9090/metrics | grep parse_errors
 
 ### High parse errors
 1. Check goflow2 is outputting JSON: `goflow2 -listen netflow://:2055 | head`
-2. Review logs: `RUST_LOG=debug ./goflow2-aggregator`
+2. Review logs: `RUST_LOG=debug ./goflow2-exporter`
 
 ### Metrics not updating
 1. Verify aggregator is running: `curl http://localhost:9090/metrics`

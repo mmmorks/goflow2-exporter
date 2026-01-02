@@ -20,19 +20,19 @@ The simplest deployment combines goflow2 and the aggregator in a single containe
 ### Build
 
 ```bash
-docker build -t goflow2-aggregator .
+docker build -t goflow2-exporter .
 ```
 
 ### Run
 
 ```bash
 docker run -d \
-  --name goflow2-aggregator \
+  --name goflow2-exporter \
   --restart unless-stopped \
   -p 2055:2055/udp \
   -p 9090:9090 \
   -e RUST_LOG=info \
-  goflow2-aggregator
+  goflow2-exporter
 ```
 
 ### Verify
@@ -42,7 +42,7 @@ docker run -d \
 docker ps
 
 # View logs
-docker logs -f goflow2-aggregator
+docker logs -f goflow2-exporter
 
 # Test metrics endpoint
 curl http://localhost:9090/metrics | grep goflow_
@@ -113,7 +113,7 @@ chmod +x /usr/local/bin/goflow2
 ### Run
 
 ```bash
-goflow2 -listen netflow://:2055 | ./target/release/goflow2-aggregator
+goflow2 -listen netflow://:2055 | ./target/release/goflow2-exporter
 ```
 
 **Advantages:**
@@ -131,7 +131,7 @@ Run as a systemd service for automatic startup and management.
 ```bash
 # Build the binary
 cargo build --release
-sudo cp target/release/goflow2-aggregator /usr/local/bin/
+sudo cp target/release/goflow2-exporter /usr/local/bin/
 
 # Install goflow2
 sudo wget https://github.com/netsampler/goflow2/releases/latest/download/goflow2-linux-amd64 -O /usr/local/bin/goflow2
@@ -141,23 +141,23 @@ sudo chmod +x /usr/local/bin/goflow2
 sudo useradd -r -s /bin/false goflow
 
 # Install service
-sudo cp examples/goflow2-aggregator.service /etc/systemd/system/
+sudo cp examples/goflow2-exporter.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable goflow2-aggregator
-sudo systemctl start goflow2-aggregator
+sudo systemctl enable goflow2-exporter
+sudo systemctl start goflow2-exporter
 ```
 
 ### Manage
 
 ```bash
 # Check status
-sudo systemctl status goflow2-aggregator
+sudo systemctl status goflow2-exporter
 
 # View logs
-sudo journalctl -u goflow2-aggregator -f
+sudo journalctl -u goflow2-exporter -f
 
 # Restart
-sudo systemctl restart goflow2-aggregator
+sudo systemctl restart goflow2-exporter
 ```
 
 **Advantages:**
@@ -176,20 +176,20 @@ For Kubernetes deployments, use the all-in-one Docker image with a Deployment an
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: goflow2-aggregator
+  name: goflow2-exporter
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: goflow2-aggregator
+      app: goflow2-exporter
   template:
     metadata:
       labels:
-        app: goflow2-aggregator
+        app: goflow2-exporter
     spec:
       containers:
-      - name: goflow2-aggregator
-        image: goflow2-aggregator:latest
+      - name: goflow2-exporter
+        image: goflow2-exporter:latest
         ports:
         - containerPort: 2055
           protocol: UDP
@@ -204,7 +204,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: goflow2-aggregator
+  name: goflow2-exporter
 spec:
   type: LoadBalancer
   ports:
@@ -215,7 +215,7 @@ spec:
     protocol: TCP
     name: metrics
   selector:
-    app: goflow2-aggregator
+    app: goflow2-exporter
 ```
 
 **Advantages:**
@@ -232,7 +232,7 @@ Add to your Prometheus configuration:
 
 ```yaml
 scrape_configs:
-  - job_name: 'goflow2-aggregator'
+  - job_name: 'goflow2-exporter'
     static_configs:
       - targets: ['localhost:9090']
 ```
@@ -305,5 +305,5 @@ curl -s http://localhost:9090/metrics | wc -l
 curl -s http://localhost:9090/metrics | grep parse_errors
 
 # View logs for details
-docker logs goflow2-aggregator | grep -i error
+docker logs goflow2-exporter | grep -i error
 ```

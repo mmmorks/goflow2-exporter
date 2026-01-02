@@ -1,4 +1,4 @@
-# goflow2-aggregator
+# goflow2-exporter
 
 A high-performance Rust application that consumes NetFlow/IPFIX events from goflow2 via stdin and exposes aggregated metrics via a Prometheus endpoint.
 
@@ -27,7 +27,7 @@ A high-performance Rust application that consumes NetFlow/IPFIX events from gofl
 cargo build --release
 ```
 
-The binary will be available at `target/release/goflow2-aggregator`.
+The binary will be available at `target/release/goflow2-exporter`.
 
 ## Usage
 
@@ -36,7 +36,7 @@ The binary will be available at `target/release/goflow2-aggregator`.
 Pipe goflow2 output directly to the aggregator:
 
 ```bash
-goflow2 -listen netflow://:2055 | ./target/release/goflow2-aggregator
+goflow2 -listen netflow://:2055 | ./target/release/goflow2-exporter
 ```
 
 ### With Logging
@@ -44,7 +44,7 @@ goflow2 -listen netflow://:2055 | ./target/release/goflow2-aggregator
 Enable debug logging:
 
 ```bash
-RUST_LOG=debug goflow2 -listen netflow://:2055 | ./target/release/goflow2-aggregator
+RUST_LOG=debug goflow2 -listen netflow://:2055 | ./target/release/goflow2-exporter
 ```
 
 ### MikroTik Configuration
@@ -149,7 +149,7 @@ All tasks run concurrently using Tokio's async runtime.
 ### Environment Variables
 
 - `RUST_LOG`: Set logging level (trace, debug, info, warn, error)
-  - Example: `RUST_LOG=info` or `RUST_LOG=goflow2_aggregator=debug`
+  - Example: `RUST_LOG=info` or `RUST_LOG=goflow2_exporter=debug`
 
 ### Customization
 
@@ -164,8 +164,8 @@ The default Dockerfile builds on top of the official goflow2 image, combining bo
 Build and run the all-in-one image:
 
 ```bash
-docker build -t goflow2-aggregator .
-docker run -d -p 2055:2055/udp -p 9090:9090 goflow2-aggregator
+docker build -t goflow2-exporter .
+docker run -d -p 2055:2055/udp -p 9090:9090 goflow2-exporter
 ```
 
 ### Docker Compose (Full Stack)
@@ -177,7 +177,7 @@ docker-compose up -d
 ```
 
 This provides:
-- **goflow2-aggregator**: NetFlow collector and metrics aggregator (ports 2055/udp, 9090)
+- **goflow2-exporter**: NetFlow collector and metrics aggregator (ports 2055/udp, 9090)
 - **Prometheus**: Metrics storage and queries (port 9091)
 - **Grafana**: Visualization dashboard (port 3000, admin/admin)
 
@@ -186,8 +186,8 @@ This provides:
 If you want to run the aggregator separately (with goflow2 running elsewhere):
 
 ```bash
-docker build -f Dockerfile.standalone -t goflow2-aggregator-standalone .
-goflow2 -listen netflow://:2055 | docker run -i -p 9090:9090 goflow2-aggregator-standalone
+docker build -f Dockerfile.standalone -t goflow2-exporter-standalone .
+goflow2 -listen netflow://:2055 | docker run -i -p 9090:9090 goflow2-exporter-standalone
 ```
 
 ## Performance Considerations
@@ -230,7 +230,7 @@ cat sample_flows.json | cargo run
 
 1. Check that goflow2 is receiving flows: `goflow2 -listen netflow://:2055`
 2. Verify JSON output is being produced
-3. Check logs: `RUST_LOG=debug ./goflow2-aggregator`
+3. Check logs: `RUST_LOG=debug ./goflow2-exporter`
 4. Verify metrics endpoint: `curl http://localhost:9090/metrics`
 
 ### Parse errors increasing

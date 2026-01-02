@@ -15,10 +15,10 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-COPY --from=builder /app/target/release/goflow2-aggregator /app/goflow2-aggregator
+COPY --from=builder /app/target/release/goflow2-exporter /app/goflow2-exporter
 
 EXPOSE 9090
 
 ENV RUST_LOG=info
 
-CMD ["/app/goflow2-aggregator"]
+CMD ["/app/goflow2-exporter"]

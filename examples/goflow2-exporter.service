@@ -7,9 +7,9 @@ Wants=network.target
 Type=simple
 User=goflow
 Group=goflow
-WorkingDirectory=/opt/goflow2-aggregator
+WorkingDirectory=/opt/goflow2-exporter
 
-ExecStart=/bin/bash -c '/usr/local/bin/goflow2 -listen netflow://:2055 | /opt/goflow2-aggregator/goflow2-aggregator'
+ExecStart=/bin/bash -c '/usr/local/bin/goflow2 -listen netflow://:2055 | /opt/goflow2-exporter/goflow2-exporter'
 
 Restart=always
 RestartSec=10
@@ -18,7 +18,7 @@ Environment="RUST_LOG=info"
 
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=goflow2-aggregator
+SyslogIdentifier=goflow2-exporter
 
 [Install]
 WantedBy=multi-user.target
