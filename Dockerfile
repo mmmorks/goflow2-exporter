@@ -1,4 +1,4 @@
-FROM rust:1.75 as builder
+FROM rust:1 AS builder
 
 WORKDIR /app
 
@@ -14,6 +14,9 @@ USER root
 RUN apk add --no-cache ca-certificates
 
 COPY --from=builder /app/target/release/goflow2-exporter /usr/local/bin/goflow2-exporter
+COPY data/ /app/data/
+
+WORKDIR /app
 
 EXPOSE 2055/udp
 EXPOSE 9090
