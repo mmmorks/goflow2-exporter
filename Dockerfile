@@ -54,5 +54,5 @@ EXPOSE 2055/udp
 EXPOSE 9090
 
 ENV RUST_LOG=info
-
+ENTRYPOINT []
 CMD ["/bin/sh", "-c", "/goflow2 -listen netflow://:2055 | ./goflow2-exporter"]
