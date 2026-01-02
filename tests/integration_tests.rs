@@ -94,17 +94,37 @@ fn test_icmp_traffic_parsing() {
 fn test_asn_mapping_integration() {
     // Create test flow with Google DNS IP (known ASN 15169)
     let test_flow = r#"{"type":"IPFIX","time_received_ns":1767324720787460121,"sequence_num":65361,"sampling_rate":0,"sampler_address":"192.168.88.1","time_flow_start_ns":1767324720000000000,"time_flow_end_ns":1767324720000000000,"bytes":100,"packets":1,"src_addr":"192.168.1.1","dst_addr":"8.8.8.8","etype":"IPv4","proto":"UDP","src_port":12345,"dst_port":53,"in_if":11,"out_if":12,"src_mac":"00:00:00:00:00:00","dst_mac":"00:00:00:00:00:00","src_vlan":0,"dst_vlan":0,"vlan_id":0,"ip_tos":0,"forwarding_status":0,"ip_ttl":0,"ip_flags":0,"tcp_flags":0,"icmp_type":0,"icmp_code":0,"ipv6_flow_label":0,"fragment_id":0,"fragment_offset":0,"src_as":0,"dst_as":0,"next_hop":"0.0.0.0","next_hop_as":0,"src_net":"0.0.0.0/0","dst_net":"0.0.0.0/0","bgp_next_hop":"","bgp_communities":[],"as_path":[],"mpls_ttl":[],"mpls_label":[],"mpls_ip":[],"observation_domain_id":0,"observation_point_id":0,"layer_stack":[],"layer_size":[],"ipv6_routing_header_addresses":[],"ipv6_routing_header_seg_left":0}"#;
-    
+
     let flow: FlowMessage = serde_json::from_str(test_flow).unwrap();
-    
+
     // Test with our minimal test database
     let metrics = Metrics::new(Some("./test_data/test-asn.mmdb"));
     metrics.record_flow(&flow);
-    
+
     let registry_output = String::from_utf8(metrics.gather()).unwrap();
-    
+
     // Verify ASN metrics are recorded for Google (ASN 15169)
     assert!(registry_output.contains("flows_by_dst_asn"));
     assert!(registry_output.contains("15169"));
     assert!(registry_output.contains("bytes_by_dst_asn"));
+}
+
+#[test]
+fn test_source_asn_mapping() {
+    // Create test flow with Google DNS as SOURCE IP (ASN 15169)
+    let test_flow = r#"{"type":"IPFIX","time_received_ns":1767324720787460121,"sequence_num":65361,"sampling_rate":0,"sampler_address":"192.168.88.1","time_flow_start_ns":1767324720000000000,"time_flow_end_ns":1767324720000000000,"bytes":200,"packets":2,"src_addr":"8.8.8.8","dst_addr":"192.168.1.1","etype":"IPv4","proto":"UDP","src_port":53,"dst_port":12345,"in_if":11,"out_if":12,"src_mac":"00:00:00:00:00:00","dst_mac":"00:00:00:00:00:00","src_vlan":0,"dst_vlan":0,"vlan_id":0,"ip_tos":0,"forwarding_status":0,"ip_ttl":0,"ip_flags":0,"tcp_flags":0,"icmp_type":0,"icmp_code":0,"ipv6_flow_label":0,"fragment_id":0,"fragment_offset":0,"src_as":0,"dst_as":0,"next_hop":"0.0.0.0","next_hop_as":0,"src_net":"0.0.0.0/0","dst_net":"0.0.0.0/0","bgp_next_hop":"","bgp_communities":[],"as_path":[],"mpls_ttl":[],"mpls_label":[],"mpls_ip":[],"observation_domain_id":0,"observation_point_id":0,"layer_stack":[],"layer_size":[],"ipv6_routing_header_addresses":[],"ipv6_routing_header_seg_left":0}"#;
+
+    let flow: FlowMessage = serde_json::from_str(test_flow).unwrap();
+
+    // Test with our minimal test database
+    let metrics = Metrics::new(Some("./test_data/test-asn.mmdb"));
+    metrics.record_flow(&flow);
+
+    let registry_output = String::from_utf8(metrics.gather()).unwrap();
+
+    // Verify source ASN metrics are recorded for Google (ASN 15169)
+    assert!(registry_output.contains("flows_by_src_asn"));
+    assert!(registry_output.contains("15169"));
+    assert!(registry_output.contains("bytes_by_src_asn"));
+    assert!(registry_output.contains("packets_by_src_asn"));
 }
