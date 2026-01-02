@@ -2,7 +2,12 @@ use crate::asn::AsnLookup;
 use crate::bounded_tracker::{BoundedMetricTracker, Clock, SystemClock};
 use crate::flow::FlowMessage;
 use anyhow::Result;
-use axum::{routing::get, Router};
+use axum::{
+    http::{header, StatusCode},
+    response::{IntoResponse, Response},
+    routing::get,
+    Router,
+};
 use parking_lot::RwLock;
 use prometheus::{Encoder, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder};
 use std::net::{IpAddr, SocketAddr};
@@ -344,8 +349,17 @@ impl Metrics {
     }
 }
 
-async fn metrics_handler(metrics: Arc<Metrics>) -> Vec<u8> {
-    metrics.gather()
+async fn metrics_handler(metrics: Arc<Metrics>) -> Response {
+    let buffer = metrics.gather();
+    (
+        StatusCode::OK,
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        buffer,
+    )
+        .into_response()
 }
 
 pub async fn serve_metrics(metrics: Arc<Metrics>) -> Result<()> {
