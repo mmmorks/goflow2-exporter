@@ -33,11 +33,7 @@ pub struct BoundedMetricTracker {
 }
 
 impl BoundedMetricTracker {
-    pub fn new(max_entries: usize, ttl: Duration) -> Self {
-        Self::new_with_clock(max_entries, ttl, Arc::new(SystemClock))
-    }
-
-    pub fn new_with_clock(max_entries: usize, ttl: Duration, clock: Arc<dyn Clock>) -> Self {
+    pub fn new(max_entries: usize, ttl: Duration, clock: Arc<dyn Clock>) -> Self {
         Self {
             entries: RwLock::new(HashMap::new()),
             max_entries,
@@ -131,7 +127,7 @@ mod tests {
 
         fn advance(&self, duration: Duration) {
             let mut time = self.current_time.write();
-            *time = *time + duration;
+            *time += duration;
         }
     }
 
@@ -151,7 +147,7 @@ mod tests {
 
     #[test]
     fn test_basic_increment() {
-        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(60));
+        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
         let counter = create_test_counter();
 
         tracker.increment("key1", &counter, &["key1"], 10);
@@ -164,7 +160,7 @@ mod tests {
 
     #[test]
     fn test_multiple_keys() {
-        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(60));
+        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
         let counter = create_test_counter();
 
         tracker.increment("key1", &counter, &["key1"], 10);
@@ -179,7 +175,7 @@ mod tests {
 
     #[test]
     fn test_cardinality_limit_evicts_lowest_value() {
-        let tracker = BoundedMetricTracker::new(3, Duration::from_secs(60));
+        let tracker = BoundedMetricTracker::new(3, Duration::from_secs(60), Arc::new(SystemClock));
         let counter = create_test_counter();
 
         tracker.increment("key1", &counter, &["key1"], 100);
@@ -201,7 +197,7 @@ mod tests {
     #[test]
     fn test_updating_existing_entry_updates_timestamp() {
         let clock = Arc::new(MockClock::new());
-        let tracker = BoundedMetricTracker::new_with_clock(100, Duration::from_secs(60), clock.clone());
+        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(60), clock.clone());
         let counter = create_test_counter();
 
         tracker.increment("key1", &counter, &["key1"], 10);
@@ -220,7 +216,7 @@ mod tests {
     #[test]
     fn test_time_based_expiration() {
         let clock = Arc::new(MockClock::new());
-        let tracker = BoundedMetricTracker::new_with_clock(100, Duration::from_secs(50), clock.clone());
+        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(50), clock.clone());
         let counter = create_test_counter();
 
         tracker.increment("key1", &counter, &["key1"], 10);
@@ -241,7 +237,7 @@ mod tests {
     #[test]
     fn test_partial_expiration() {
         let clock = Arc::new(MockClock::new());
-        let tracker = BoundedMetricTracker::new_with_clock(100, Duration::from_secs(100), clock.clone());
+        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(100), clock.clone());
         let counter = create_test_counter();
 
         tracker.increment("key1", &counter, &["key1"], 10);
@@ -264,7 +260,7 @@ mod tests {
 
     #[test]
     fn test_cleanup_with_no_expired_entries() {
-        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(60));
+        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
         let counter = create_test_counter();
 
         tracker.increment("key1", &counter, &["key1"], 10);
@@ -279,7 +275,7 @@ mod tests {
 
     #[test]
     fn test_eviction_counter_accumulates() {
-        let tracker = BoundedMetricTracker::new(2, Duration::from_secs(60));
+        let tracker = BoundedMetricTracker::new(2, Duration::from_secs(60), Arc::new(SystemClock));
         let counter = create_test_counter();
 
         tracker.increment("key1", &counter, &["key1"], 100);
@@ -293,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_prometheus_counter_increments_correctly() {
-        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(60));
+        let tracker = BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
         let registry = Registry::new();
         let counter = IntCounterVec::new(
             Opts::new("test_metric", "Test metric"),
