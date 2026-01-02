@@ -31,14 +31,28 @@ async fn process_lines<R: tokio::io::AsyncRead + Unpin>(
             continue;
         }
 
-        match serde_json::from_str::<FlowMessage>(&line) {
-            Ok(flow) => {
-                debug!("Parsed flow: {:?}", flow);
-                metrics.record_flow(&flow);
-            }
-            Err(e) => {
-                warn!("Failed to parse flow message: {} - Line: {}", e, line);
-                metrics.increment_parse_errors();
+        // Handle multiple JSON objects concatenated on a single line
+        let mut remaining = line.as_str();
+        while !remaining.is_empty() {
+            // Try to parse one JSON object from the beginning
+            let mut deserializer = serde_json::Deserializer::from_str(remaining).into_iter::<FlowMessage>();
+
+            match deserializer.next() {
+                Some(Ok(flow)) => {
+                    debug!("Parsed flow: {:?}", flow);
+                    metrics.record_flow(&flow);
+
+                    // Move past the parsed JSON object
+                    remaining = &remaining[deserializer.byte_offset()..];
+                }
+                Some(Err(e)) => {
+                    warn!("Failed to parse flow message: {} - Line: {}", e, line);
+                    metrics.increment_parse_errors();
+                    break;
+                }
+                None => {
+                    break;
+                }
             }
         }
     }
@@ -111,5 +125,28 @@ mod tests {
         // Should have both valid flows and parse errors
         assert!(output.contains("goflow_flows_all_total"));
         assert!(output.contains("goflow_parse_errors_total"));
+    }
+
+    #[tokio::test]
+    async fn test_process_concatenated_json() {
+        let metrics = Arc::new(Metrics::new(None));
+        let flow1 = r#"{"type":"IPFIX","time_received_ns":1767324720787460121,"sequence_num":65361,"sampling_rate":0,"sampler_address":"192.168.88.1","time_flow_start_ns":1767324720000000000,"time_flow_end_ns":1767324720000000000,"bytes":143,"packets":1,"src_addr":"192.168.89.2","dst_addr":"192.168.88.30","etype":"IPv4","proto":"UDP","src_port":53,"dst_port":55743}"#;
+        let flow2 = r#"{"type":"IPFIX","time_received_ns":1767324720787460122,"sequence_num":65362,"sampling_rate":0,"sampler_address":"192.168.88.1","time_flow_start_ns":1767324720000000000,"time_flow_end_ns":1767324720000000000,"bytes":256,"packets":2,"src_addr":"192.168.89.3","dst_addr":"192.168.88.31","etype":"IPv4","proto":"TCP","src_port":80,"dst_port":12345}"#;
+
+        // Concatenate two JSON objects on a single line (no newline between them)
+        let concatenated_input = format!("{}{}", flow1, flow2);
+
+        let input = concatenated_input.as_bytes();
+        let reader = BufReader::new(input);
+
+        let result = process_lines(reader, metrics.clone()).await;
+        assert!(result.is_ok());
+
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        // Should have parsed both flows
+        assert!(output.contains("goflow_flows_all_total"));
+        // Should have counted 2 flows (both UDP and TCP)
+        assert!(output.contains(r#"protocol="UDP""#));
+        assert!(output.contains(r#"protocol="TCP""#));
     }
 }
