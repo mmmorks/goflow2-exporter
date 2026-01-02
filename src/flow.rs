@@ -58,13 +58,17 @@ impl FlowMessage {
     pub fn scaled_bytes(&self) -> u64 {
         let bytes = self.bytes.unwrap_or(0);
         let sampling_rate = self.sampling_rate.unwrap_or(1);
-        bytes * sampling_rate
+        // sampling_rate of 0 means no sampling (1:1), treat as 1
+        let rate = if sampling_rate == 0 { 1 } else { sampling_rate };
+        bytes * rate
     }
 
     pub fn scaled_packets(&self) -> u64 {
         let packets = self.packets.unwrap_or(0);
         let sampling_rate = self.sampling_rate.unwrap_or(1);
-        packets * sampling_rate
+        // sampling_rate of 0 means no sampling (1:1), treat as 1
+        let rate = if sampling_rate == 0 { 1 } else { sampling_rate };
+        packets * rate
     }
 }
 
@@ -116,5 +120,27 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(flow.scaled_packets(), 100);
+    }
+
+    #[test]
+    fn test_scaled_bytes_zero_sampling_rate() {
+        // sampling_rate=0 means no sampling, should treat as 1:1
+        let flow = FlowMessage {
+            bytes: Some(100),
+            sampling_rate: Some(0),
+            ..Default::default()
+        };
+        assert_eq!(flow.scaled_bytes(), 100);
+    }
+
+    #[test]
+    fn test_scaled_packets_zero_sampling_rate() {
+        // sampling_rate=0 means no sampling, should treat as 1:1
+        let flow = FlowMessage {
+            packets: Some(5),
+            sampling_rate: Some(0),
+            ..Default::default()
+        };
+        assert_eq!(flow.scaled_packets(), 5);
     }
 }
