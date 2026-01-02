@@ -690,7 +690,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "topk(20, rate(goflow_bytes_by_dst_addr_total{instance=\"$instance\"}[$__rate_interval]))",
+          "expr": "topk(20, rate(goflow_bytes_by_dst_subnet_total{instance=\"$instance\"}[$__rate_interval]))",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -714,7 +714,7 @@
             "indexByName": {},
             "renameByName": {
               "Value": "Traffic Rate",
-              "dst_addr": "Destination IP"
+              "dst_subnet": "Destination IP"
             }
           }
         }
@@ -800,7 +800,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "topk(20, rate(goflow_bytes_by_src_addr_total{instance=\"$instance\"}[$__rate_interval]))",
+          "expr": "topk(20, rate(goflow_bytes_by_src_subnet_total{instance=\"$instance\"}[$__rate_interval]))",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -824,7 +824,7 @@
             "indexByName": {},
             "renameByName": {
               "Value": "Traffic Rate",
-              "src_addr": "Source IP"
+              "src_subnet": "Source IP"
             }
           }
         }
@@ -1432,7 +1432,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "topk(20, rate(goflow_flows_by_dst_addr_total{instance=\"$instance\"}[$__rate_interval]))",
+          "expr": "topk(20, rate(goflow_flows_by_dst_subnet_total{instance=\"$instance\"}[$__rate_interval]))",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -1456,7 +1456,7 @@
             "indexByName": {},
             "renameByName": {
               "Value": "Flow Rate",
-              "dst_addr": "Destination IP"
+              "dst_subnet": "Destination IP"
             }
           }
         }
@@ -1542,7 +1542,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "topk(20, rate(goflow_flows_by_src_addr_total{instance=\"$instance\"}[$__rate_interval]))",
+          "expr": "topk(20, rate(goflow_flows_by_src_subnet_total{instance=\"$instance\"}[$__rate_interval]))",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -1566,7 +1566,7 @@
             "indexByName": {},
             "renameByName": {
               "Value": "Flow Rate",
-              "src_addr": "Source IP"
+              "src_subnet": "Source IP"
             }
           }
         }
@@ -1906,7 +1906,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "topk(20, rate(goflow_packets_by_dst_addr_total{instance=\"$instance\"}[$__rate_interval]))",
+          "expr": "topk(20, rate(goflow_packets_by_dst_subnet_total{instance=\"$instance\"}[$__rate_interval]))",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -1930,7 +1930,7 @@
             "indexByName": {},
             "renameByName": {
               "Value": "Packet Rate",
-              "dst_addr": "Destination IP"
+              "dst_subnet": "Destination IP"
             }
           }
         }
@@ -2016,7 +2016,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "topk(20, rate(goflow_packets_by_src_addr_total{instance=\"$instance\"}[$__rate_interval]))",
+          "expr": "topk(20, rate(goflow_packets_by_src_subnet_total{instance=\"$instance\"}[$__rate_interval]))",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -2040,7 +2040,7 @@
             "indexByName": {},
             "renameByName": {
               "Value": "Packet Rate",
-              "src_addr": "Source IP"
+              "src_subnet": "Source IP"
             }
           }
         }

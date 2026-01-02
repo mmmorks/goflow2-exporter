@@ -93,8 +93,8 @@ The aggregator exposes metrics on `http://localhost:9090/metrics`.
 #### Flow Counters
 - `goflow_flows_total{sampler_address, flow_type}` - Total flows received
 - `goflow_flows_by_protocol_total{protocol}` - Flows by protocol
-- `goflow_flows_by_src_addr_total{src_addr}` - Flows by source IP
-- `goflow_flows_by_dst_addr_total{dst_addr}` - Flows by destination IP
+- `goflow_flows_by_src_subnet_total{src_subnet}` - Flows by source subnet (CIDR)
+- `goflow_flows_by_dst_subnet_total{dst_subnet}` - Flows by destination subnet (CIDR)
 - `goflow_flows_by_sampler_total{sampler_address}` - Flows by sampler
 
 #### Traffic Volume (Scaled by Sampling Rate)
@@ -102,8 +102,8 @@ The aggregator exposes metrics on `http://localhost:9090/metrics`.
 - `goflow_packets_total{sampler_address, flow_type}` - Total packets
 - `goflow_bytes_by_protocol_total{protocol}` - Bytes by protocol
 - `goflow_packets_by_protocol_total{protocol}` - Packets by protocol
-- `goflow_bytes_by_src_addr_total{src_addr}` - Bytes by source IP
-- `goflow_bytes_by_dst_addr_total{dst_addr}` - Bytes by destination IP
+- `goflow_bytes_by_src_subnet_total{src_subnet}` - Bytes by source subnet (CIDR)
+- `goflow_bytes_by_dst_subnet_total{dst_subnet}` - Bytes by destination subnet (CIDR)
 - `goflow_bytes_by_sampler_total{sampler_address}` - Bytes by sampler
 - `goflow_packets_by_sampler_total{sampler_address}` - Packets by sampler
 
@@ -115,9 +115,9 @@ The aggregator exposes metrics on `http://localhost:9090/metrics`.
 
 ### Example Prometheus Queries
 
-**Top talkers by bytes:**
+**Top talkers by bytes (by subnet):**
 ```promql
-topk(10, rate(goflow_bytes_by_src_addr_total[5m]))
+topk(10, rate(goflow_bytes_by_src_subnet_total[5m]))
 ```
 
 **Traffic by protocol:**
@@ -208,8 +208,8 @@ goflow2 -listen netflow://:2055 | docker run -i -p 9090:9090 goflow2-exporter-st
 ## Performance Considerations
 
 - **Sampling Rate**: The aggregator automatically scales byte/packet counts by the sampling rate reported in each flow
-- **Memory**: Metrics are aggregated per unique label combination (IP addresses, protocols, etc.)
-- **Cardinality**: Be aware of high cardinality metrics (e.g., `flows_by_src_addr`) with many unique IPs
+- **Memory**: Metrics are aggregated per unique label combination (subnets, protocols, etc.)
+- **Cardinality**: Subnet-based tracking (CIDR notation) significantly reduces cardinality compared to tracking individual IP addresses. Requires ASN database for subnet lookups.
 
 ## Development
 

@@ -89,9 +89,9 @@ add address=<server-ip>:2055 version=ipfix
 
 Example queries:
 
-**Top 10 source IPs by bandwidth:**
+**Top 10 source subnets by bandwidth:**
 ```promql
-topk(10, rate(goflow_bytes_by_src_addr_total[5m]))
+topk(10, rate(goflow_bytes_by_src_subnet_total[5m]))
 ```
 
 **Total bandwidth in Mbps:**
