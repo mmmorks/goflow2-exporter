@@ -20,8 +20,8 @@ impl Clock for SystemClock {
 
 #[derive(Clone)]
 pub struct TrackedEntry {
-    pub value: u64,
     pub last_updated: Instant,
+    pub labels: Vec<String>,
 }
 
 pub struct BoundedMetricTracker {
@@ -43,48 +43,79 @@ impl BoundedMetricTracker {
         }
     }
 
-    pub fn increment(&self, key: &str, metric: &IntCounterVec, labels: &[&str], amount: u64) {
+    pub fn increment(
+        &self,
+        key: &str,
+        metrics: &[&IntCounterVec],
+        labels: &[&str],
+        amounts: &[u64],
+    ) {
         let now = self.clock.now();
         let mut entries = self.entries.write();
 
         if let Some(entry) = entries.get_mut(key) {
-            entry.value += amount;
             entry.last_updated = now;
-            metric.with_label_values(labels).inc_by(amount);
         } else {
             if entries.len() >= self.max_entries {
-                self.evict_one(&mut entries);
+                self.evict_one(&mut entries, metrics);
             }
 
             entries.insert(
                 key.to_string(),
                 TrackedEntry {
-                    value: amount,
                     last_updated: now,
+                    labels: labels.iter().map(|s| s.to_string()).collect(),
                 },
             );
+        }
+
+        // Increment all metrics
+        for (metric, &amount) in metrics.iter().zip(amounts.iter()) {
             metric.with_label_values(labels).inc_by(amount);
         }
     }
 
-    fn evict_one(&self, entries: &mut HashMap<String, TrackedEntry>) {
-        if let Some(lru_key) = entries
+    fn evict_one(&self, entries: &mut HashMap<String, TrackedEntry>, metrics: &[&IntCounterVec]) {
+        if let Some((lru_key, lru_labels)) = entries
             .iter()
-            .min_by_key(|(_, entry)| (entry.value, entry.last_updated))
-            .map(|(k, _)| k.clone())
+            .min_by_key(|(_, entry)| entry.last_updated)
+            .map(|(k, e)| (k.clone(), e.labels.clone()))
         {
             entries.remove(&lru_key);
+
+            // Remove labels from all Prometheus metrics
+            for metric in metrics {
+                let label_refs: Vec<&str> = lru_labels.iter().map(|s| s.as_str()).collect();
+                metric.remove_label_values(&label_refs).ok();
+            }
+
             let mut evicted = self.evicted_count.write();
             *evicted += 1;
         }
     }
 
-    pub fn cleanup_expired(&self) -> usize {
+    pub fn cleanup_expired(&self, metrics: &[&IntCounterVec]) -> usize {
         let now = self.clock.now();
         let mut entries = self.entries.write();
         let before_count = entries.len();
 
+        // Collect expired entries to remove their labels
+        let expired: Vec<_> = entries
+            .iter()
+            .filter(|(_, entry)| now.duration_since(entry.last_updated) >= self.ttl)
+            .map(|(_, entry)| entry.labels.clone())
+            .collect();
+
+        // Remove expired entries from internal tracking
         entries.retain(|_, entry| now.duration_since(entry.last_updated) < self.ttl);
+
+        // Remove labels from Prometheus metrics
+        for labels in expired {
+            for metric in metrics {
+                let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+                metric.remove_label_values(&label_refs).ok();
+            }
+        }
 
         let removed = before_count - entries.len();
         if removed > 0 {
@@ -147,12 +178,11 @@ mod tests {
             BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
         let counter = create_test_counter();
 
-        tracker.increment("key1", &counter, &["key1"], 10);
-        tracker.increment("key1", &counter, &["key1"], 5);
+        tracker.increment("key1", &[&counter], &["key1"], &[10]);
+        tracker.increment("key1", &[&counter], &["key1"], &[5]);
 
         assert_eq!(tracker.current_cardinality(), 1);
-        let entry = tracker.get_entry("key1").unwrap();
-        assert_eq!(entry.value, 15);
+        assert_eq!(counter.with_label_values(&["key1"]).get(), 15);
     }
 
     #[test]
@@ -161,35 +191,47 @@ mod tests {
             BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
         let counter = create_test_counter();
 
-        tracker.increment("key1", &counter, &["key1"], 10);
-        tracker.increment("key2", &counter, &["key2"], 20);
-        tracker.increment("key3", &counter, &["key3"], 30);
+        tracker.increment("key1", &[&counter], &["key1"], &[10]);
+        tracker.increment("key2", &[&counter], &["key2"], &[20]);
+        tracker.increment("key3", &[&counter], &["key3"], &[30]);
 
         assert_eq!(tracker.current_cardinality(), 3);
-        assert_eq!(tracker.get_entry("key1").unwrap().value, 10);
-        assert_eq!(tracker.get_entry("key2").unwrap().value, 20);
-        assert_eq!(tracker.get_entry("key3").unwrap().value, 30);
+        assert_eq!(counter.with_label_values(&["key1"]).get(), 10);
+        assert_eq!(counter.with_label_values(&["key2"]).get(), 20);
+        assert_eq!(counter.with_label_values(&["key3"]).get(), 30);
     }
 
     #[test]
-    fn test_cardinality_limit_evicts_lowest_value() {
-        let tracker = BoundedMetricTracker::new(3, Duration::from_secs(60), Arc::new(SystemClock));
+    fn test_cardinality_limit_evicts_oldest() {
+        let clock = Arc::new(MockClock::new());
+        let tracker = BoundedMetricTracker::new(3, Duration::from_secs(60), clock.clone());
         let counter = create_test_counter();
 
-        tracker.increment("key1", &counter, &["key1"], 100);
-        tracker.increment("key2", &counter, &["key2"], 50);
-        tracker.increment("key3", &counter, &["key3"], 200);
+        tracker.increment("key1", &[&counter], &["key1"], &[100]);
+        clock.advance(Duration::from_millis(10));
+        tracker.increment("key2", &[&counter], &["key2"], &[50]);
+        clock.advance(Duration::from_millis(10));
+        tracker.increment("key3", &[&counter], &["key3"], &[200]);
 
         assert_eq!(tracker.current_cardinality(), 3);
 
-        tracker.increment("key4", &counter, &["key4"], 75);
+        clock.advance(Duration::from_millis(10));
+        tracker.increment("key4", &[&counter], &["key4"], &[75]);
 
+        // key1 should be evicted as it's the oldest
         assert_eq!(tracker.current_cardinality(), 3);
-        assert!(tracker.get_entry("key1").is_some());
-        assert!(tracker.get_entry("key2").is_none());
+        assert!(tracker.get_entry("key1").is_none());
+        assert!(tracker.get_entry("key2").is_some());
         assert!(tracker.get_entry("key3").is_some());
         assert!(tracker.get_entry("key4").is_some());
         assert_eq!(tracker.total_evicted(), 1);
+
+        // Verify the Prometheus metrics are correct after eviction
+        // Note: remove_label_values removes the label, so it resets to 0
+        assert_eq!(counter.with_label_values(&["key1"]).get(), 0);
+        assert_eq!(counter.with_label_values(&["key2"]).get(), 50);
+        assert_eq!(counter.with_label_values(&["key3"]).get(), 200);
+        assert_eq!(counter.with_label_values(&["key4"]).get(), 75);
     }
 
     #[test]
@@ -198,17 +240,17 @@ mod tests {
         let tracker = BoundedMetricTracker::new(100, Duration::from_secs(60), clock.clone());
         let counter = create_test_counter();
 
-        tracker.increment("key1", &counter, &["key1"], 10);
+        tracker.increment("key1", &[&counter], &["key1"], &[10]);
         let first_timestamp = tracker.get_entry("key1").unwrap().last_updated;
 
         // Advance time
         clock.advance(Duration::from_millis(10));
 
-        tracker.increment("key1", &counter, &["key1"], 5);
+        tracker.increment("key1", &[&counter], &["key1"], &[5]);
         let second_timestamp = tracker.get_entry("key1").unwrap().last_updated;
 
         assert!(second_timestamp > first_timestamp);
-        assert_eq!(tracker.get_entry("key1").unwrap().value, 15);
+        assert_eq!(counter.with_label_values(&["key1"]).get(), 15);
     }
 
     #[test]
@@ -217,15 +259,15 @@ mod tests {
         let tracker = BoundedMetricTracker::new(100, Duration::from_secs(50), clock.clone());
         let counter = create_test_counter();
 
-        tracker.increment("key1", &counter, &["key1"], 10);
-        tracker.increment("key2", &counter, &["key2"], 20);
+        tracker.increment("key1", &[&counter], &["key1"], &[10]);
+        tracker.increment("key2", &[&counter], &["key2"], &[20]);
 
         assert_eq!(tracker.current_cardinality(), 2);
 
         // Advance time past TTL
         clock.advance(Duration::from_secs(60));
 
-        let removed = tracker.cleanup_expired();
+        let removed = tracker.cleanup_expired(&[&counter]);
 
         assert_eq!(removed, 2);
         assert_eq!(tracker.current_cardinality(), 0);
@@ -238,17 +280,17 @@ mod tests {
         let tracker = BoundedMetricTracker::new(100, Duration::from_secs(100), clock.clone());
         let counter = create_test_counter();
 
-        tracker.increment("key1", &counter, &["key1"], 10);
+        tracker.increment("key1", &[&counter], &["key1"], &[10]);
 
         // Advance time
         clock.advance(Duration::from_secs(60));
 
-        tracker.increment("key2", &counter, &["key2"], 20);
+        tracker.increment("key2", &[&counter], &["key2"], &[20]);
 
         // Advance time enough to expire key1 but not key2
         clock.advance(Duration::from_secs(50));
 
-        let removed = tracker.cleanup_expired();
+        let removed = tracker.cleanup_expired(&[&counter]);
 
         assert_eq!(removed, 1);
         assert_eq!(tracker.current_cardinality(), 1);
@@ -262,10 +304,10 @@ mod tests {
             BoundedMetricTracker::new(100, Duration::from_secs(60), Arc::new(SystemClock));
         let counter = create_test_counter();
 
-        tracker.increment("key1", &counter, &["key1"], 10);
-        tracker.increment("key2", &counter, &["key2"], 20);
+        tracker.increment("key1", &[&counter], &["key1"], &[10]);
+        tracker.increment("key2", &[&counter], &["key2"], &[20]);
 
-        let removed = tracker.cleanup_expired();
+        let removed = tracker.cleanup_expired(&[&counter]);
 
         assert_eq!(removed, 0);
         assert_eq!(tracker.current_cardinality(), 2);
@@ -274,13 +316,17 @@ mod tests {
 
     #[test]
     fn test_eviction_counter_accumulates() {
-        let tracker = BoundedMetricTracker::new(2, Duration::from_secs(60), Arc::new(SystemClock));
+        let clock = Arc::new(MockClock::new());
+        let tracker = BoundedMetricTracker::new(2, Duration::from_secs(60), clock.clone());
         let counter = create_test_counter();
 
-        tracker.increment("key1", &counter, &["key1"], 100);
-        tracker.increment("key2", &counter, &["key2"], 200);
-        tracker.increment("key3", &counter, &["key3"], 300);
-        tracker.increment("key4", &counter, &["key4"], 400);
+        tracker.increment("key1", &[&counter], &["key1"], &[100]);
+        clock.advance(Duration::from_millis(10));
+        tracker.increment("key2", &[&counter], &["key2"], &[200]);
+        clock.advance(Duration::from_millis(10));
+        tracker.increment("key3", &[&counter], &["key3"], &[300]);
+        clock.advance(Duration::from_millis(10));
+        tracker.increment("key4", &[&counter], &["key4"], &[400]);
 
         assert_eq!(tracker.total_evicted(), 2);
         assert_eq!(tracker.current_cardinality(), 2);
@@ -295,9 +341,9 @@ mod tests {
             IntCounterVec::new(Opts::new("test_metric", "Test metric"), &["key"]).unwrap();
         registry.register(Box::new(counter.clone())).unwrap();
 
-        tracker.increment("key1", &counter, &["key1"], 10);
-        tracker.increment("key1", &counter, &["key1"], 5);
-        tracker.increment("key2", &counter, &["key2"], 20);
+        tracker.increment("key1", &[&counter], &["key1"], &[10]);
+        tracker.increment("key1", &[&counter], &["key1"], &[5]);
+        tracker.increment("key2", &[&counter], &["key2"], &[20]);
 
         assert_eq!(counter.with_label_values(&["key1"]).get(), 15);
         assert_eq!(counter.with_label_values(&["key2"]).get(), 20);

@@ -5,7 +5,6 @@ use anyhow::Result;
 use axum::{routing::get, Router};
 use parking_lot::RwLock;
 use prometheus::{Encoder, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder};
-use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -94,8 +93,6 @@ pub struct Metrics {
 
     // Other metrics
     parse_errors_total: IntCounterVec,
-    active_flows: Arc<RwLock<HashMap<String, u64>>>,
-    active_flows_gauge: IntGaugeVec,
     cardinality_gauge: IntGaugeVec,
     evictions_total: IntCounterVec,
 }
@@ -173,12 +170,6 @@ impl Metrics {
                 "Total number of parse errors",
                 &["error_type"]
             ),
-            active_flows_gauge: gauge!(
-                registry,
-                "goflow_active_flows",
-                "Active flows by sampler",
-                &["sampler_address"]
-            ),
             cardinality_gauge: gauge!(
                 registry,
                 "goflow_metric_cardinality",
@@ -194,7 +185,6 @@ impl Metrics {
 
             registry,
             asn_lookup: AsnLookup::new(asn_db_path),
-            active_flows: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -208,18 +198,12 @@ impl Metrics {
 
         // Helper to record with tracker (all groups now use trackers)
         let record_with_tracker = |group: &MetricGroup, key: &str, labels: &[&str]| {
-            group
-                .tracker
-                .tracker
-                .increment(key, &group.flows, labels, 1);
-            group
-                .tracker
-                .tracker
-                .increment(key, &group.bytes, labels, scaled_bytes);
-            group
-                .tracker
-                .tracker
-                .increment(key, &group.packets, labels, scaled_packets);
+            group.tracker.tracker.increment(
+                key,
+                &[&group.flows, &group.bytes, &group.packets],
+                labels,
+                &[1, scaled_bytes, scaled_packets],
+            );
         };
 
         // Record all metrics using trackers
@@ -259,13 +243,6 @@ impl Metrics {
                 }
             }
         }
-
-        // Update active flows
-        let mut active_flows = self.active_flows.write();
-        *active_flows.entry(sampler_address.to_string()).or_insert(0) += 1;
-        self.active_flows_gauge
-            .with_label_values(&[sampler_address])
-            .set(active_flows[sampler_address] as i64);
     }
 
     pub fn increment_parse_errors(&self) {
@@ -284,7 +261,11 @@ impl Metrics {
         ];
 
         for (group, metric_type) in groups {
-            let removed = group.tracker.tracker.cleanup_expired();
+            let removed = group.tracker.tracker.cleanup_expired(&[
+                &group.flows,
+                &group.bytes,
+                &group.packets,
+            ]);
             if removed > 0 {
                 self.evictions_total
                     .with_label_values(&[metric_type])
@@ -627,23 +608,31 @@ mod tests {
     }
 
     #[test]
-    fn test_top_talker_retention() {
+    fn test_recent_entries_retained() {
         let metrics = Metrics::new(None);
 
-        let big_talker = create_test_flow("10.0.0.1", "10.0.0.2", 1_000_000);
-        for _ in 0..100 {
-            metrics.record_flow(&big_talker);
-        }
+        // Add an old entry
+        let old_flow = create_test_flow("10.0.0.1", "10.0.0.2", 1_000_000);
+        metrics.record_flow(&old_flow);
 
+        // Add many newer entries that will fill the cardinality limit
         for i in 0..15000 {
-            let small_flow =
+            let new_flow =
                 create_test_flow(&format!("192.168.{}.{}", i / 256, i % 256), "10.0.0.3", 100);
-            metrics.record_flow(&small_flow);
+            metrics.record_flow(&new_flow);
         }
 
+        // The old entry should have been evicted as it's the oldest
         assert!(
-            metrics.get_tracker_entry(&metrics.by_src_addr, "10.0.0.1"),
-            "Big talker should be retained"
+            !metrics.get_tracker_entry(&metrics.by_src_addr, "10.0.0.1"),
+            "Old entry should be evicted when cardinality limit is reached"
+        );
+
+        // Cardinality should be at the limit
+        assert_eq!(
+            metrics.get_tracker_cardinality(&metrics.by_src_addr),
+            DEFAULT_MAX_CARDINALITY,
+            "Cardinality should be at the maximum limit"
         );
     }
 
@@ -671,5 +660,113 @@ mod tests {
         let output_str = String::from_utf8(output).unwrap();
 
         assert!(output_str.contains("goflow_parse_errors_total"));
+    }
+
+    #[test]
+    fn test_labels_removed_from_prometheus_output_after_ttl() {
+        let clock = Arc::new(MockClock::new());
+        let metrics = Metrics::new_with_clock(None, clock.clone());
+
+        // Record flows to create specific labels
+        let flow1 = create_test_flow("10.0.0.1", "192.168.0.1", 1000);
+        let flow2 = create_test_flow("10.0.0.2", "192.168.0.2", 2000);
+        metrics.record_flow(&flow1);
+        metrics.record_flow(&flow2);
+
+        // Gather metrics - labels should be present
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            output.contains(r#"src_addr="10.0.0.1""#),
+            "Label 10.0.0.1 should be present before TTL expiration"
+        );
+        assert!(
+            output.contains(r#"src_addr="10.0.0.2""#),
+            "Label 10.0.0.2 should be present before TTL expiration"
+        );
+        assert!(
+            output.contains(r#"dst_addr="192.168.0.1""#),
+            "Label 192.168.0.1 should be present before TTL expiration"
+        );
+
+        // Advance time past TTL
+        clock.advance(Duration::from_secs(DEFAULT_FLOW_TTL_SECONDS + 100));
+
+        // Cleanup expired flows
+        metrics.cleanup_expired_flows();
+
+        // Gather metrics again - labels should be gone
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            !output.contains(r#"src_addr="10.0.0.1""#),
+            "Label 10.0.0.1 should be removed after TTL expiration"
+        );
+        assert!(
+            !output.contains(r#"src_addr="10.0.0.2""#),
+            "Label 10.0.0.2 should be removed after TTL expiration"
+        );
+        assert!(
+            !output.contains(r#"dst_addr="192.168.0.1""#),
+            "Label 192.168.0.1 should be removed after TTL expiration"
+        );
+
+        // Record the same flow again - should start from fresh counter
+        metrics.record_flow(&flow1);
+
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            output.contains(r#"src_addr="10.0.0.1""#),
+            "Label 10.0.0.1 should reappear after new flow"
+        );
+
+        // Verify it started fresh (should see value 1000, not 2000)
+        // Extract the bytes value for this label
+        for line in output.lines() {
+            if line.contains(r#"goflow_bytes_by_src_addr"#)
+                && line.contains(r#"src_addr="10.0.0.1""#)
+            {
+                assert!(
+                    line.contains("1000"),
+                    "Counter should have reset and show 1000, not accumulated value. Line: {}",
+                    line
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_labels_removed_after_cardinality_eviction() {
+        let clock = Arc::new(MockClock::new());
+        let metrics = Metrics::new_with_clock(None, clock.clone());
+
+        // Record an old flow
+        let old_flow = create_test_flow("10.0.0.1", "192.168.0.1", 5000);
+        metrics.record_flow(&old_flow);
+
+        // Verify it's in the output
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            output.contains(r#"src_addr="10.0.0.1""#),
+            "Old label should be present initially"
+        );
+
+        // Advance time slightly and fill the cardinality limit with newer flows
+        clock.advance(Duration::from_millis(100));
+        for i in 0..DEFAULT_MAX_CARDINALITY {
+            let flow = create_test_flow(&format!("192.168.{}.{}", i / 256, i % 256), "10.0.0.2", 100);
+            metrics.record_flow(&flow);
+        }
+
+        // The old flow should be evicted (LRU)
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            !output.contains(r#"src_addr="10.0.0.1""#),
+            "Old label should be removed after cardinality-based eviction"
+        );
+
+        // Verify some of the newer flows are still present
+        assert!(
+            output.contains(r#"src_addr="192.168.0.1""#),
+            "Newer labels should still be present"
+        );
     }
 }
