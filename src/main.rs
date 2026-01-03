@@ -3,6 +3,7 @@ mod bounded_tracker;
 mod flow;
 mod metrics;
 mod stdin_reader;
+mod tcp_flags;
 
 use anyhow::Result;
 use std::sync::Arc;

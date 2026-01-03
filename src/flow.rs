@@ -41,6 +41,9 @@ pub struct FlowMessage {
     pub etype: Option<String>,
     pub proto: Option<String>,
 
+    #[serde(rename = "tcp_flags")]
+    pub tcp_flags: Option<u16>,
+
     #[serde(rename = "src_mac")]
     pub src_mac: Option<String>,
 
@@ -69,6 +72,27 @@ impl FlowMessage {
         // sampling_rate of 0 means no sampling (1:1), treat as 1
         let rate = if sampling_rate == 0 { 1 } else { sampling_rate };
         packets * rate
+    }
+
+    /// Get normalized protocol name, prefixing with IPv6- for IPv6 traffic (except IPv6-ICMP which is already prefixed)
+    ///
+    /// Examples:
+    /// - IPv4 + TCP -> "TCP"
+    /// - IPv4 + UDP -> "UDP"
+    /// - IPv4 + ICMP -> "ICMP"
+    /// - IPv6 + TCP -> "IPv6-TCP"
+    /// - IPv6 + UDP -> "IPv6-UDP"
+    /// - IPv6 + IPv6-ICMP -> "IPv6-ICMP" (unchanged)
+    pub fn normalized_protocol(&self) -> String {
+        let proto = self.proto.as_deref().unwrap_or("unknown");
+        let etype = self.etype.as_deref().unwrap_or("unknown");
+
+        // If it's IPv6 and the protocol doesn't already start with "IPv6-", prefix it
+        if etype == "IPv6" && !proto.starts_with("IPv6-") {
+            format!("IPv6-{}", proto)
+        } else {
+            proto.to_string()
+        }
     }
 }
 
@@ -142,5 +166,64 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(flow.scaled_packets(), 5);
+    }
+
+    #[test]
+    fn test_normalized_protocol_ipv4() {
+        let flow = FlowMessage {
+            etype: Some("IPv4".to_string()),
+            proto: Some("TCP".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(flow.normalized_protocol(), "TCP");
+
+        let flow = FlowMessage {
+            etype: Some("IPv4".to_string()),
+            proto: Some("UDP".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(flow.normalized_protocol(), "UDP");
+
+        let flow = FlowMessage {
+            etype: Some("IPv4".to_string()),
+            proto: Some("ICMP".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(flow.normalized_protocol(), "ICMP");
+    }
+
+    #[test]
+    fn test_normalized_protocol_ipv6() {
+        let flow = FlowMessage {
+            etype: Some("IPv6".to_string()),
+            proto: Some("TCP".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(flow.normalized_protocol(), "IPv6-TCP");
+
+        let flow = FlowMessage {
+            etype: Some("IPv6".to_string()),
+            proto: Some("UDP".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(flow.normalized_protocol(), "IPv6-UDP");
+
+        // IPv6-ICMP already has the prefix, should not double-prefix
+        let flow = FlowMessage {
+            etype: Some("IPv6".to_string()),
+            proto: Some("IPv6-ICMP".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(flow.normalized_protocol(), "IPv6-ICMP");
+    }
+
+    #[test]
+    fn test_normalized_protocol_unknown() {
+        let flow = FlowMessage {
+            etype: None,
+            proto: None,
+            ..Default::default()
+        };
+        assert_eq!(flow.normalized_protocol(), "unknown");
     }
 }

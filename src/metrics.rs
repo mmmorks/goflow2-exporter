@@ -1,6 +1,7 @@
 use crate::asn::AsnLookup;
 use crate::bounded_tracker::{BoundedMetricTracker, Clock, SystemClock};
 use crate::flow::FlowMessage;
+use crate::tcp_flags::decode_tcp_flags;
 use anyhow::Result;
 use axum::{
     http::{header, StatusCode},
@@ -126,6 +127,7 @@ pub struct Metrics {
 
     // Dimensional metrics only track bytes and packets
     by_protocol: DimensionalMetricGroup,
+    by_tcp_flags: DimensionalMetricGroup,
     by_sampler: DimensionalMetricGroup,
     by_src_addr: DimensionalMetricGroup,
     by_dst_addr: DimensionalMetricGroup,
@@ -161,6 +163,14 @@ impl Metrics {
                 "by_protocol",
                 "by protocol",
                 &["protocol"],
+                ttl,
+                clock.clone()
+            ),
+            by_tcp_flags: dimensional_metric_group!(
+                registry,
+                "by_tcp_flags",
+                "by TCP flags",
+                &["tcp_flags"],
                 ttl,
                 clock.clone()
             ),
@@ -232,7 +242,7 @@ impl Metrics {
     pub fn record_flow(&self, flow: &FlowMessage) {
         let sampler_address = flow.sampler_address.as_deref().unwrap_or("unknown");
         let flow_type = flow.flow_type.as_deref().unwrap_or("unknown");
-        let protocol = flow.proto.as_deref().unwrap_or("unknown");
+        let protocol = flow.normalized_protocol();
 
         let scaled_bytes = flow.scaled_bytes();
         let scaled_packets = flow.scaled_packets();
@@ -265,7 +275,12 @@ impl Metrics {
         );
 
         // Record dimensional metrics without record counter
-        record_dimensional(&self.by_protocol, protocol, &[protocol]);
+        record_dimensional(&self.by_protocol, &protocol, &[&protocol]);
+
+        // Record TCP flags metrics
+        let tcp_flags_str = decode_tcp_flags(flow.tcp_flags.unwrap_or(0));
+        record_dimensional(&self.by_tcp_flags, &tcp_flags_str, &[&tcp_flags_str]);
+
         record_dimensional(&self.by_sampler, sampler_address, &[sampler_address]);
 
         // Source IP metrics - single lookup for both ASN and subnet
@@ -319,6 +334,7 @@ impl Metrics {
         // Cleanup dimensional metrics (without records counter)
         let dimensional_groups = [
             (&self.by_protocol, "protocol"),
+            (&self.by_tcp_flags, "tcp_flags"),
             (&self.by_sampler, "sampler"),
             (&self.by_src_addr, "src_subnet"),
             (&self.by_dst_addr, "dst_subnet"),
@@ -348,6 +364,7 @@ impl Metrics {
         // Update dimensional metrics cardinality
         let dimensional_groups = [
             (&self.by_protocol, "protocol"),
+            (&self.by_tcp_flags, "tcp_flags"),
             (&self.by_sampler, "sampler"),
             (&self.by_src_addr, "src_subnet"),
             (&self.by_dst_addr, "dst_subnet"),
@@ -377,6 +394,7 @@ impl Metrics {
         // Update dimensional metrics evictions
         let dimensional_groups = [
             (&self.by_protocol, "protocol"),
+            (&self.by_tcp_flags, "tcp_flags"),
             (&self.by_sampler, "sampler"),
             (&self.by_src_addr, "src_subnet"),
             (&self.by_dst_addr, "dst_subnet"),
@@ -498,6 +516,7 @@ mod tests {
             dst_port: Some(443),
             etype: Some("IPv4".to_string()),
             proto: Some("TCP".to_string()),
+            tcp_flags: Some(0),
             src_mac: None,
             dst_mac: None,
             in_if: None,

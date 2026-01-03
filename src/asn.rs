@@ -1,10 +1,19 @@
 use ipnet::IpNet;
 use maxminddb::{geoip2, Reader};
 use std::net::IpAddr;
+use strum_macros::{Display, EnumString};
 use tracing::warn;
 
 pub struct AsnLookup {
     reader: Option<Reader<Vec<u8>>>,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, Display, EnumString)]
+pub enum AddressType {
+    #[strum(serialize = "IPv4")]
+    IPv4,
+    #[strum(serialize = "IPv6")]
+    IPv6,
 }
 
 #[derive(Debug, PartialEq)]
@@ -16,6 +25,7 @@ pub struct AsnInfo {
 #[derive(Debug, PartialEq)]
 pub struct SubnetInfo {
     pub cidr: String,
+    pub address_type: AddressType,
 }
 
 #[derive(Debug, PartialEq)]
@@ -52,9 +62,15 @@ impl AsnLookup {
         let network = IpNet::new(ip, prefix_len as u8).ok()?.trunc();
         let cidr = network.to_string();
 
+        // Determine address type
+        let address_type = match ip {
+            IpAddr::V4(_) => AddressType::IPv4,
+            IpAddr::V6(_) => AddressType::IPv6,
+        };
+
         Some(IpInfo {
             asn: AsnInfo { number, organization },
-            subnet: SubnetInfo { cidr },
+            subnet: SubnetInfo { cidr, address_type },
         })
     }
 }
@@ -94,6 +110,8 @@ mod tests {
 
         // Verify subnet information
         assert_eq!(info.subnet.cidr, "8.8.8.0/24");
+        assert_eq!(info.subnet.address_type, AddressType::IPv4);
+        assert_eq!(info.subnet.address_type.to_string(), "IPv4");
     }
 
     #[test]
@@ -108,6 +126,8 @@ mod tests {
 
         // Verify subnet information
         assert_eq!(info.subnet.cidr, "2001:4860:4860::/48");
+        assert_eq!(info.subnet.address_type, AddressType::IPv6);
+        assert_eq!(info.subnet.address_type.to_string(), "IPv6");
     }
 
     #[test]
