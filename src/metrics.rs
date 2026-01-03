@@ -37,14 +37,14 @@ macro_rules! gauge {
     }};
 }
 
-// All metric groups use the same cardinality limit
-macro_rules! metric_group {
+// Metric group for total metrics (includes records counter)
+macro_rules! total_metric_group {
     ($registry:expr, $prefix:expr, $help_prefix:expr, $labels:expr, $ttl:expr, $clock:expr) => {{
-        MetricGroup {
-            flows: counter!(
+        TotalMetricGroup {
+            records: counter!(
                 $registry,
-                concat!("goflow_flows_", $prefix, "_total"),
-                concat!("Flows ", $help_prefix),
+                concat!("goflow_records_", $prefix, "_total"),
+                concat!("Records ", $help_prefix),
                 $labels
             ),
             bytes: counter!(
@@ -71,8 +71,42 @@ macro_rules! metric_group {
     }};
 }
 
-struct MetricGroup {
-    flows: IntCounterVec,
+// Metric group for dimensional metrics (no records counter)
+macro_rules! dimensional_metric_group {
+    ($registry:expr, $prefix:expr, $help_prefix:expr, $labels:expr, $ttl:expr, $clock:expr) => {{
+        DimensionalMetricGroup {
+            bytes: counter!(
+                $registry,
+                concat!("goflow_bytes_", $prefix, "_total"),
+                concat!("Bytes ", $help_prefix),
+                $labels
+            ),
+            packets: counter!(
+                $registry,
+                concat!("goflow_packets_", $prefix, "_total"),
+                concat!("Packets ", $help_prefix),
+                $labels
+            ),
+            tracker: TrackerGroup {
+                tracker: Arc::new(BoundedMetricTracker::new(
+                    DEFAULT_MAX_CARDINALITY,
+                    $ttl,
+                    $clock,
+                )),
+                last_evictions: RwLock::default(),
+            },
+        }
+    }};
+}
+
+struct TotalMetricGroup {
+    records: IntCounterVec,
+    bytes: IntCounterVec,
+    packets: IntCounterVec,
+    tracker: TrackerGroup,
+}
+
+struct DimensionalMetricGroup {
     bytes: IntCounterVec,
     packets: IntCounterVec,
     tracker: TrackerGroup,
@@ -87,14 +121,16 @@ pub struct Metrics {
     registry: Registry,
     asn_lookup: AsnLookup,
 
-    // All metrics use the same structure now
-    total: MetricGroup,
-    by_protocol: MetricGroup,
-    by_sampler: MetricGroup,
-    by_src_addr: MetricGroup,
-    by_dst_addr: MetricGroup,
-    by_src_asn: MetricGroup,
-    by_dst_asn: MetricGroup,
+    // Total metrics include record counter
+    total: TotalMetricGroup,
+
+    // Dimensional metrics only track bytes and packets
+    by_protocol: DimensionalMetricGroup,
+    by_sampler: DimensionalMetricGroup,
+    by_src_addr: DimensionalMetricGroup,
+    by_dst_addr: DimensionalMetricGroup,
+    by_src_asn: DimensionalMetricGroup,
+    by_dst_asn: DimensionalMetricGroup,
 
     // Other metrics
     parse_errors_total: IntCounterVec,
@@ -112,7 +148,7 @@ impl Metrics {
         let ttl = Duration::from_secs(DEFAULT_FLOW_TTL_SECONDS);
 
         Self {
-            total: metric_group!(
+            total: total_metric_group!(
                 registry,
                 "all",
                 "all",
@@ -120,7 +156,7 @@ impl Metrics {
                 ttl,
                 clock.clone()
             ),
-            by_protocol: metric_group!(
+            by_protocol: dimensional_metric_group!(
                 registry,
                 "by_protocol",
                 "by protocol",
@@ -128,7 +164,7 @@ impl Metrics {
                 ttl,
                 clock.clone()
             ),
-            by_sampler: metric_group!(
+            by_sampler: dimensional_metric_group!(
                 registry,
                 "by_sampler",
                 "by sampler",
@@ -136,7 +172,7 @@ impl Metrics {
                 ttl,
                 clock.clone()
             ),
-            by_src_addr: metric_group!(
+            by_src_addr: dimensional_metric_group!(
                 registry,
                 "by_src_subnet",
                 "by source subnet",
@@ -144,7 +180,7 @@ impl Metrics {
                 ttl,
                 clock.clone()
             ),
-            by_dst_addr: metric_group!(
+            by_dst_addr: dimensional_metric_group!(
                 registry,
                 "by_dst_subnet",
                 "by destination subnet",
@@ -152,7 +188,7 @@ impl Metrics {
                 ttl,
                 clock.clone()
             ),
-            by_src_asn: metric_group!(
+            by_src_asn: dimensional_metric_group!(
                 registry,
                 "by_src_asn",
                 "by source ASN",
@@ -160,7 +196,7 @@ impl Metrics {
                 ttl,
                 clock.clone()
             ),
-            by_dst_asn: metric_group!(
+            by_dst_asn: dimensional_metric_group!(
                 registry,
                 "by_dst_asn",
                 "by destination ASN",
@@ -201,36 +237,48 @@ impl Metrics {
         let scaled_bytes = flow.scaled_bytes();
         let scaled_packets = flow.scaled_packets();
 
-        // Helper to record with tracker (all groups now use trackers)
-        let record_with_tracker = |group: &MetricGroup, key: &str, labels: &[&str]| {
+        // Helper to record total metrics (includes record counter)
+        let record_total = |group: &TotalMetricGroup, key: &str, labels: &[&str]| {
             group.tracker.tracker.increment(
                 key,
-                &[&group.flows, &group.bytes, &group.packets],
+                &[&group.records, &group.bytes, &group.packets],
                 labels,
                 &[1, scaled_bytes, scaled_packets],
             );
         };
 
-        // Record all metrics using trackers
-        record_with_tracker(
+        // Helper to record dimensional metrics (no record counter)
+        let record_dimensional = |group: &DimensionalMetricGroup, key: &str, labels: &[&str]| {
+            group.tracker.tracker.increment(
+                key,
+                &[&group.bytes, &group.packets],
+                labels,
+                &[scaled_bytes, scaled_packets],
+            );
+        };
+
+        // Record total metrics with record counter
+        record_total(
             &self.total,
             &format!("{}|{}", sampler_address, flow_type),
             &[sampler_address, flow_type],
         );
-        record_with_tracker(&self.by_protocol, protocol, &[protocol]);
-        record_with_tracker(&self.by_sampler, sampler_address, &[sampler_address]);
+
+        // Record dimensional metrics without record counter
+        record_dimensional(&self.by_protocol, protocol, &[protocol]);
+        record_dimensional(&self.by_sampler, sampler_address, &[sampler_address]);
 
         // Source IP metrics - single lookup for both ASN and subnet
         if let Some(src_addr) = &flow.src_addr {
             if let Ok(ip) = src_addr.parse::<IpAddr>() {
                 if let Some(ip_info) = self.asn_lookup.lookup(ip) {
                     // Record subnet metrics
-                    record_with_tracker(&self.by_src_addr, &ip_info.subnet.cidr, &[&ip_info.subnet.cidr]);
+                    record_dimensional(&self.by_src_addr, &ip_info.subnet.cidr, &[&ip_info.subnet.cidr]);
 
                     // Record ASN metrics
                     let asn_str = ip_info.asn.number.to_string();
                     let key = format!("{}|{}", ip_info.asn.number, ip_info.asn.organization);
-                    record_with_tracker(&self.by_src_asn, &key, &[&asn_str, &ip_info.asn.organization]);
+                    record_dimensional(&self.by_src_asn, &key, &[&asn_str, &ip_info.asn.organization]);
                 }
             }
         }
@@ -240,12 +288,12 @@ impl Metrics {
             if let Ok(ip) = dst_addr.parse::<IpAddr>() {
                 if let Some(ip_info) = self.asn_lookup.lookup(ip) {
                     // Record subnet metrics
-                    record_with_tracker(&self.by_dst_addr, &ip_info.subnet.cidr, &[&ip_info.subnet.cidr]);
+                    record_dimensional(&self.by_dst_addr, &ip_info.subnet.cidr, &[&ip_info.subnet.cidr]);
 
                     // Record ASN metrics
                     let asn_str = ip_info.asn.number.to_string();
                     let key = format!("{}|{}", ip_info.asn.number, ip_info.asn.organization);
-                    record_with_tracker(&self.by_dst_asn, &key, &[&asn_str, &ip_info.asn.organization]);
+                    record_dimensional(&self.by_dst_asn, &key, &[&asn_str, &ip_info.asn.organization]);
                 }
             }
         }
@@ -256,8 +304,20 @@ impl Metrics {
     }
 
     pub fn cleanup_expired_flows(&self) {
-        let groups = [
-            (&self.total, "all"),
+        // Cleanup total metrics (with records counter)
+        let removed = self.total.tracker.tracker.cleanup_expired(&[
+            &self.total.records,
+            &self.total.bytes,
+            &self.total.packets,
+        ]);
+        if removed > 0 {
+            self.evictions_total
+                .with_label_values(&["all"])
+                .inc_by(removed as u64);
+        }
+
+        // Cleanup dimensional metrics (without records counter)
+        let dimensional_groups = [
             (&self.by_protocol, "protocol"),
             (&self.by_sampler, "sampler"),
             (&self.by_src_addr, "src_subnet"),
@@ -266,9 +326,8 @@ impl Metrics {
             (&self.by_dst_asn, "dst_asn"),
         ];
 
-        for (group, metric_type) in groups {
+        for (group, metric_type) in dimensional_groups {
             let removed = group.tracker.tracker.cleanup_expired(&[
-                &group.flows,
                 &group.bytes,
                 &group.packets,
             ]);
@@ -281,8 +340,13 @@ impl Metrics {
     }
 
     fn update_cardinality_metrics(&self) {
-        let groups = [
-            (&self.total, "all"),
+        // Update total metrics cardinality
+        self.cardinality_gauge
+            .with_label_values(&["all"])
+            .set(self.total.tracker.tracker.current_cardinality() as i64);
+
+        // Update dimensional metrics cardinality
+        let dimensional_groups = [
             (&self.by_protocol, "protocol"),
             (&self.by_sampler, "sampler"),
             (&self.by_src_addr, "src_subnet"),
@@ -291,7 +355,7 @@ impl Metrics {
             (&self.by_dst_asn, "dst_asn"),
         ];
 
-        for (group, metric_type) in groups {
+        for (group, metric_type) in dimensional_groups {
             self.cardinality_gauge
                 .with_label_values(&[metric_type])
                 .set(group.tracker.tracker.current_cardinality() as i64);
@@ -299,8 +363,19 @@ impl Metrics {
     }
 
     fn update_eviction_metrics(&self) {
-        let groups = [
-            (&self.total, "all"),
+        // Update total metrics evictions
+        let current_evicted = self.total.tracker.tracker.total_evicted();
+        let mut last_evicted = self.total.tracker.last_evictions.write();
+        if current_evicted > *last_evicted {
+            let delta = current_evicted - *last_evicted;
+            self.evictions_total
+                .with_label_values(&["all"])
+                .inc_by(delta);
+            *last_evicted = current_evicted;
+        }
+
+        // Update dimensional metrics evictions
+        let dimensional_groups = [
             (&self.by_protocol, "protocol"),
             (&self.by_sampler, "sampler"),
             (&self.by_src_addr, "src_subnet"),
@@ -309,7 +384,7 @@ impl Metrics {
             (&self.by_dst_asn, "dst_asn"),
         ];
 
-        for (group, metric_type) in groups {
+        for (group, metric_type) in dimensional_groups {
             let current_evicted = group.tracker.tracker.total_evicted();
             let mut last_evicted = group.tracker.last_evictions.write();
 
@@ -335,12 +410,12 @@ impl Metrics {
     }
 
     #[cfg(test)]
-    fn get_tracker_cardinality(&self, group: &MetricGroup) -> usize {
+    fn get_tracker_cardinality(&self, group: &DimensionalMetricGroup) -> usize {
         group.tracker.tracker.current_cardinality()
     }
 
     #[cfg(test)]
-    fn get_tracker_evicted(&self, group: &MetricGroup) -> u64 {
+    fn get_tracker_evicted(&self, group: &DimensionalMetricGroup) -> u64 {
         group.tracker.tracker.total_evicted()
     }
 }

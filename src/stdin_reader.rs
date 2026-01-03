@@ -78,7 +78,7 @@ mod tests {
 
         // Verify metrics were recorded
         let output = String::from_utf8(metrics.gather()).unwrap();
-        assert!(output.contains("goflow_flows_all_total"));
+        assert!(output.contains("goflow_records_all_total"));
     }
 
     #[tokio::test]
@@ -122,8 +122,8 @@ mod tests {
         assert!(result.is_ok());
 
         let output = String::from_utf8(metrics.gather()).unwrap();
-        // Should have both valid flows and parse errors
-        assert!(output.contains("goflow_flows_all_total"));
+        // Should have both valid records and parse errors
+        assert!(output.contains("goflow_records_all_total"));
         assert!(output.contains("goflow_parse_errors_total"));
     }
 
@@ -143,9 +143,9 @@ mod tests {
         assert!(result.is_ok());
 
         let output = String::from_utf8(metrics.gather()).unwrap();
-        // Should have parsed both flows
-        assert!(output.contains("goflow_flows_all_total"));
-        // Should have counted 2 flows (both UDP and TCP)
+        // Should have parsed both records
+        assert!(output.contains("goflow_records_all_total"));
+        // Should have counted 2 records (both UDP and TCP)
         assert!(output.contains(r#"protocol="UDP""#));
         assert!(output.contains(r#"protocol="TCP""#));
     }

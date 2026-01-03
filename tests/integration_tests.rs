@@ -106,9 +106,9 @@ fn test_asn_mapping_integration() {
     let registry_output = String::from_utf8(metrics.gather()).unwrap();
 
     // Verify ASN metrics are recorded for Google (ASN 15169)
-    assert!(registry_output.contains("flows_by_dst_asn"));
+    assert!(registry_output.contains("goflow_bytes_by_dst_asn_total"));
     assert!(registry_output.contains("15169"));
-    assert!(registry_output.contains("bytes_by_dst_asn"));
+    assert!(registry_output.contains("goflow_packets_by_dst_asn_total"));
 }
 
 #[test]
@@ -125,10 +125,9 @@ fn test_source_asn_mapping() {
     let registry_output = String::from_utf8(metrics.gather()).unwrap();
 
     // Verify source ASN metrics are recorded for Google (ASN 15169)
-    assert!(registry_output.contains("flows_by_src_asn"));
+    assert!(registry_output.contains("goflow_bytes_by_src_asn_total"));
     assert!(registry_output.contains("15169"));
-    assert!(registry_output.contains("bytes_by_src_asn"));
-    assert!(registry_output.contains("packets_by_src_asn"));
+    assert!(registry_output.contains("goflow_packets_by_src_asn_total"));
 }
 
 #[tokio::test]
@@ -153,6 +152,6 @@ async fn test_application_components() {
         .unwrap();
 
     let output = String::from_utf8(metrics.gather()).unwrap();
-    assert!(output.contains("goflow_flows_all_total"));
+    assert!(output.contains("goflow_records_all_total"));
     assert!(output.contains("192.168.88.1"));
 }
