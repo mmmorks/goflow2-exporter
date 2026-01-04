@@ -286,7 +286,8 @@ impl Metrics {
         // Source IP metrics - single lookup for both ASN and subnet
         if let Some(src_addr) = &flow.src_addr {
             if let Ok(ip) = src_addr.parse::<IpAddr>() {
-                if let Some(ip_info) = self.asn_lookup.lookup(ip) {
+                let next_hop = flow.next_hop.as_deref();
+                if let Some(ip_info) = self.asn_lookup.lookup_with_context(ip, next_hop, true) {
                     // Record subnet metrics
                     record_dimensional(
                         &self.by_src_addr,
@@ -309,7 +310,8 @@ impl Metrics {
         // Destination IP metrics - single lookup for both ASN and subnet
         if let Some(dst_addr) = &flow.dst_addr {
             if let Ok(ip) = dst_addr.parse::<IpAddr>() {
-                if let Some(ip_info) = self.asn_lookup.lookup(ip) {
+                let next_hop = flow.next_hop.as_deref();
+                if let Some(ip_info) = self.asn_lookup.lookup_with_context(ip, next_hop, false) {
                     // Record subnet metrics
                     record_dimensional(
                         &self.by_dst_addr,
@@ -537,6 +539,7 @@ mod tests {
             dst_mac: None,
             in_if: None,
             out_if: None,
+            next_hop: None,
         }
     }
 

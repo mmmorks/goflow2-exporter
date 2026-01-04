@@ -111,7 +111,8 @@ The codebase is organized into focused modules with clear responsibilities:
 
 - **`asn.rs`**: Provides unified IP lookup that returns both ASN and subnet info in a single database query:
   - Returns `IpInfo { asn: AsnInfo, subnet: SubnetInfo }`
-  - Uses MaxMind GeoLite2 ASN database
+  - Automatically detects own public IPv6 addresses (6rd tunnels) using next_hop patterns
+  - Uses MaxMind GeoLite2 ASN database for external IPs
   - Calculates CIDR notation using ipnet library
   - Gracefully handles missing database (returns None)
 
@@ -146,10 +147,28 @@ All tasks share an `Arc<Metrics>` for thread-safe metric updates. The main task 
 - See `FlowMessage::normalized_protocol()` in [src/flow.rs](src/flow.rs)
 
 #### ASN Enrichment
-- Optional MaxMind GeoLite2 ASN database (configured via ASN_DB_PATH env var)
-- Provides ASN number and organization name for IPs
-- Falls back gracefully if database is unavailable
-- The `asn_lookup` function in [src/metrics.rs:289](src/metrics.rs#L289) performs unified IP lookups
+
+The system provides synthetic ASN classifications for different IP address types:
+
+**Private IPv4 (RFC 1918):**
+- ASN 64512: 10.0.0.0/8 (Class A)
+- ASN 64513: 172.16.0.0/12 (Class B)
+- ASN 64514: 192.168.0.0/16 (Class C)
+
+**IPv6 Private and Local:**
+- ASN 64515: fc00::/7 (ULA - Unique Local Addresses)
+- ASN 64516: Own public IPv6 (6rd/tunnel addresses, auto-detected via next_hop)
+
+**Public IPs:**
+- Uses MaxMind GeoLite2 ASN database (configured via ASN_DB_PATH env var)
+- Falls back to ASN 0 "Unknown" if database unavailable
+
+**Own IPv6 Detection (6rd Tunnels):**
+The system automatically detects your own public IPv6 addresses in 6rd deployments by analyzing the `next_hop` field:
+- `next_hop = "::300:0:0:0"` indicates outbound traffic → src_addr is own IPv6
+- `next_hop = "::4000:0:0:0"` indicates inbound traffic → dst_addr is own IPv6
+- All detected addresses are grouped by /64 prefix
+- See `classify_own_ipv6()` in [src/asn.rs](src/asn.rs#L44) for implementation
 
 ### Metrics Design Patterns
 

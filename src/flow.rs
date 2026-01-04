@@ -55,6 +55,9 @@ pub struct FlowMessage {
 
     #[serde(rename = "out_if")]
     pub out_if: Option<u32>,
+
+    #[serde(rename = "next_hop")]
+    pub next_hop: Option<String>,
 }
 
 impl FlowMessage {

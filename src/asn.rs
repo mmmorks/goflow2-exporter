@@ -34,6 +34,49 @@ pub struct IpInfo {
     pub subnet: SubnetInfo,
 }
 
+/// Classifies an IPv6 address as "own" (public IPv6 assigned to local network) based on next_hop patterns.
+///
+/// For 6rd tunnels and similar IPv6 deployments, the next_hop field reveals routing direction:
+/// - next_hop "::300:0:0:0" indicates outbound traffic (src is own IPv6)
+/// - next_hop "::4000:0:0:0" indicates inbound traffic (dst is own IPv6)
+///
+/// Returns synthetic IpInfo with ASN 64516 if the address is classified as own.
+fn classify_own_ipv6(ip: IpAddr, next_hop: Option<&str>, is_source: bool) -> Option<IpInfo> {
+    if !matches!(ip, IpAddr::V6(_)) {
+        return None;
+    }
+
+    let next_hop_indicates_own = match (next_hop, is_source) {
+        (Some("::300:0:0:0"), true) => true,   // Outbound: src is own
+        (Some("::4000:0:0:0"), false) => true, // Inbound: dst is own
+        _ => false,
+    };
+
+    if next_hop_indicates_own {
+        // Extract /64 prefix from the full IPv6 address for subnet tracking
+        if let IpAddr::V6(v6) = ip {
+            let segments = v6.segments();
+            let prefix = format!(
+                "{:x}:{:x}:{:x}:{:x}::/64",
+                segments[0], segments[1], segments[2], segments[3]
+            );
+
+            return Some(IpInfo {
+                asn: AsnInfo {
+                    number: 64516,
+                    organization: "Own (Public IPv6)".to_string(),
+                },
+                subnet: SubnetInfo {
+                    cidr: prefix,
+                    address_type: AddressType::IPv6,
+                },
+            });
+        }
+    }
+
+    None
+}
+
 /// Classifies a private IP address and returns synthetic IpInfo.
 /// Handles RFC 1918 private IPv4 ranges and IPv6 ULA addresses.
 fn classify_private_ip(ip: IpAddr) -> Option<IpInfo> {
@@ -118,6 +161,31 @@ impl AsnLookup {
         });
 
         Self { reader }
+    }
+
+    /// Lookup both ASN and subnet information for an IP address with next_hop context.
+    ///
+    /// Checks in order:
+    /// 1. Own IPv6 addresses (based on next_hop patterns for 6rd/tunnels)
+    /// 2. Private IP addresses (RFC 1918, IPv6 ULA)
+    /// 3. MaxMind ASN database
+    /// 4. Falls back to "Unknown" (ASN 0)
+    ///
+    /// The next_hop parameter enables automatic detection of own public IPv6 addresses
+    /// in 6rd deployments where next_hop reveals routing direction.
+    pub fn lookup_with_context(
+        &self,
+        ip: IpAddr,
+        next_hop: Option<&str>,
+        is_source: bool,
+    ) -> Option<IpInfo> {
+        // First check if this is own public IPv6 (6rd or similar)
+        if let Some(own_info) = classify_own_ipv6(ip, next_hop, is_source) {
+            return Some(own_info);
+        }
+
+        // Fall back to standard lookup (private IPs, database, unknown)
+        self.lookup(ip)
     }
 
     /// Lookup both ASN and subnet information for an IP address with a single database query.
@@ -485,5 +553,137 @@ mod tests {
         // Should get database data for Google
         assert_eq!(info.asn.number, 15169);
         assert_eq!(info.subnet.cidr, "8.8.8.0/24");
+    }
+
+    #[test]
+    fn test_own_ipv6_outbound_detection() {
+        let lookup = AsnLookup::new(None);
+
+        // Outbound traffic (::300:0:0:0) - source should be classified as own
+        let ip = IpAddr::from_str("2602:47:d4ad:f901:aa23:feff:fe20:946b").unwrap();
+        let info = lookup
+            .lookup_with_context(ip, Some("::300:0:0:0"), true)
+            .unwrap();
+
+        assert_eq!(info.asn.number, 64516);
+        assert_eq!(info.asn.organization, "Own (Public IPv6)");
+        assert_eq!(info.subnet.cidr, "2602:47:d4ad:f901::/64");
+        assert_eq!(info.subnet.address_type, AddressType::IPv6);
+    }
+
+    #[test]
+    fn test_own_ipv6_inbound_detection() {
+        let lookup = AsnLookup::new(None);
+
+        // Inbound traffic (::4000:0:0:0) - destination should be classified as own
+        let ip = IpAddr::from_str("2602:47:d4ad:f901:3152:860d:d317:16d7").unwrap();
+        let info = lookup
+            .lookup_with_context(ip, Some("::4000:0:0:0"), false)
+            .unwrap();
+
+        assert_eq!(info.asn.number, 64516);
+        assert_eq!(info.asn.organization, "Own (Public IPv6)");
+        assert_eq!(info.subnet.cidr, "2602:47:d4ad:f901::/64");
+        assert_eq!(info.subnet.address_type, AddressType::IPv6);
+    }
+
+    #[test]
+    fn test_own_ipv6_wrong_direction_not_classified() {
+        let lookup = AsnLookup::new(None);
+
+        // Outbound next_hop but checking destination - should NOT be classified as own
+        let ip = IpAddr::from_str("2602:47:d4ad:f901:aa23:feff:fe20:946b").unwrap();
+        let info = lookup
+            .lookup_with_context(ip, Some("::300:0:0:0"), false)
+            .unwrap();
+
+        // Should fall back to "Unknown" (ASN 0) since no database
+        assert_eq!(info.asn.number, 0);
+        assert_eq!(info.asn.organization, "Unknown");
+    }
+
+    #[test]
+    fn test_own_ipv6_no_next_hop_not_classified() {
+        let lookup = AsnLookup::new(None);
+
+        // No next_hop provided - should NOT be classified as own
+        let ip = IpAddr::from_str("2602:47:d4ad:f901:aa23:feff:fe20:946b").unwrap();
+        let info = lookup.lookup_with_context(ip, None, true).unwrap();
+
+        // Should fall back to "Unknown" (ASN 0) since no database
+        assert_eq!(info.asn.number, 0);
+        assert_eq!(info.asn.organization, "Unknown");
+    }
+
+    #[test]
+    fn test_own_ipv6_different_next_hop_not_classified() {
+        let lookup = AsnLookup::new(None);
+
+        // Different next_hop value - should NOT be classified as own
+        let ip = IpAddr::from_str("2602:47:d4ad:f901:aa23:feff:fe20:946b").unwrap();
+        let info = lookup
+            .lookup_with_context(ip, Some("aa23:feff:fe20:946b:8000::"), true)
+            .unwrap();
+
+        // Should fall back to "Unknown" (ASN 0) since no database
+        assert_eq!(info.asn.number, 0);
+        assert_eq!(info.asn.organization, "Unknown");
+    }
+
+    #[test]
+    fn test_own_ipv6_ipv4_not_affected() {
+        let lookup = AsnLookup::new(None);
+
+        // IPv4 address should not be affected by next_hop detection
+        let ip = IpAddr::from_str("192.168.1.1").unwrap();
+        let info = lookup
+            .lookup_with_context(ip, Some("::300:0:0:0"), true)
+            .unwrap();
+
+        // Should still be classified as private IPv4
+        assert_eq!(info.asn.number, 64514);
+        assert_eq!(info.asn.organization, "Private (Class C)");
+    }
+
+    #[test]
+    fn test_own_ipv6_overrides_database() {
+        let lookup = AsnLookup::new(Some("./test_data/test-asn.mmdb"));
+
+        // Even with database, own IPv6 detection should take precedence
+        let ip = IpAddr::from_str("2602:47:d4ad:f901:aa23:feff:fe20:946b").unwrap();
+        let info = lookup
+            .lookup_with_context(ip, Some("::300:0:0:0"), true)
+            .unwrap();
+
+        assert_eq!(info.asn.number, 64516);
+        assert_eq!(info.asn.organization, "Own (Public IPv6)");
+        assert_eq!(info.subnet.cidr, "2602:47:d4ad:f901::/64");
+    }
+
+    #[test]
+    fn test_own_ipv6_multiple_hosts_same_prefix() {
+        let lookup = AsnLookup::new(None);
+
+        // Different hosts on the same /64 should all get the same subnet
+        let hosts = vec![
+            "2602:47:d4ad:f901:aa23:feff:fe20:946b",
+            "2602:47:d4ad:f901:3152:860d:d317:16d7",
+            "2602:47:d4ad:f901:bc14:668f:1c4:d89a",
+            "2602:47:d4ad:f901:e150:d20a:204c:c4b0",
+        ];
+
+        for host_str in hosts {
+            let ip = IpAddr::from_str(host_str).unwrap();
+            let info = lookup
+                .lookup_with_context(ip, Some("::300:0:0:0"), true)
+                .unwrap();
+
+            assert_eq!(info.asn.number, 64516);
+            assert_eq!(info.asn.organization, "Own (Public IPv6)");
+            assert_eq!(
+                info.subnet.cidr, "2602:47:d4ad:f901::/64",
+                "All hosts should map to same /64 prefix"
+            );
+        }
     }
 }
