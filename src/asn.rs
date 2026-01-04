@@ -122,6 +122,8 @@ impl AsnLookup {
 
     /// Lookup both ASN and subnet information for an IP address with a single database query.
     /// Returns synthetic IpInfo for private IP addresses (RFC 1918 and IPv6 ULA).
+    /// Returns "Unknown" (ASN 0, subnet 0.0.0.0/0 or ::/0) for IPs not found in database
+    /// to ensure all traffic is tracked even without ASN data.
     pub fn lookup(&self, ip: IpAddr) -> Option<IpInfo> {
         // First check if this is a private IP address
         if let Some(private_info) = classify_private_ip(ip) {
@@ -129,33 +131,45 @@ impl AsnLookup {
         }
 
         // For public IPs, query the MaxMind database
-        let (asn_record, prefix_len) = self
-            .reader
-            .as_ref()?
-            .lookup_prefix::<geoip2::Asn>(ip)
-            .ok()?;
+        if let Some(reader) = self.reader.as_ref() {
+            if let Ok((asn_record, prefix_len)) = reader.lookup_prefix::<geoip2::Asn>(ip) {
+                if let Some(number) = asn_record.autonomous_system_number {
+                    let organization = asn_record
+                        .autonomous_system_organization
+                        .unwrap_or("Unknown")
+                        .to_string();
 
-        // Extract ASN information
-        let number = asn_record.autonomous_system_number?;
-        let organization = asn_record
-            .autonomous_system_organization
-            .unwrap_or("Unknown")
-            .to_string();
+                    // Calculate subnet CIDR notation using ipnet
+                    if let Ok(network) = IpNet::new(ip, prefix_len as u8) {
+                        let cidr = network.trunc().to_string();
+                        let address_type = match ip {
+                            IpAddr::V4(_) => AddressType::IPv4,
+                            IpAddr::V6(_) => AddressType::IPv6,
+                        };
 
-        // Calculate subnet CIDR notation using ipnet
-        let network = IpNet::new(ip, prefix_len as u8).ok()?.trunc();
-        let cidr = network.to_string();
+                        return Some(IpInfo {
+                            asn: AsnInfo {
+                                number,
+                                organization,
+                            },
+                            subnet: SubnetInfo { cidr, address_type },
+                        });
+                    }
+                }
+            }
+        }
 
-        // Determine address type
-        let address_type = match ip {
-            IpAddr::V4(_) => AddressType::IPv4,
-            IpAddr::V6(_) => AddressType::IPv6,
+        // If we get here, either no database, IP not found, or lookup failed
+        // Return synthetic "Unknown" data to ensure traffic is tracked
+        let (cidr, address_type) = match ip {
+            IpAddr::V4(_) => ("0.0.0.0/0".to_string(), AddressType::IPv4),
+            IpAddr::V6(_) => ("::/0".to_string(), AddressType::IPv6),
         };
 
         Some(IpInfo {
             asn: AsnInfo {
-                number,
-                organization,
+                number: 0,
+                organization: "Unknown".to_string(),
             },
             subnet: SubnetInfo { cidr, address_type },
         })
@@ -173,14 +187,25 @@ mod tests {
         assert!(lookup.reader.is_none());
 
         let ip = IpAddr::from_str("8.8.8.8").unwrap();
-        assert!(lookup.lookup(ip).is_none());
+        let info = lookup.lookup(ip).unwrap();
+
+        // Without database, should return "Unknown" ASN 0
+        assert_eq!(info.asn.number, 0);
+        assert_eq!(info.asn.organization, "Unknown");
+        assert_eq!(info.subnet.cidr, "0.0.0.0/0");
+        assert_eq!(info.subnet.address_type, AddressType::IPv4);
     }
 
     #[test]
     fn test_lookup_with_invalid_path() {
         let lookup = AsnLookup::new(Some("/nonexistent/path.mmdb"));
         let ip = IpAddr::from_str("8.8.8.8").unwrap();
-        assert!(lookup.lookup(ip).is_none());
+        let info = lookup.lookup(ip).unwrap();
+
+        // Invalid database path should return "Unknown" ASN 0
+        assert_eq!(info.asn.number, 0);
+        assert_eq!(info.asn.organization, "Unknown");
+        assert_eq!(info.subnet.cidr, "0.0.0.0/0");
     }
 
     #[test]
@@ -299,12 +324,18 @@ mod tests {
 
         for ip_str in non_private_ips {
             let ip = IpAddr::from_str(ip_str).unwrap();
-            let info = lookup.lookup(ip);
+            let info = lookup.lookup(ip).unwrap();
 
-            // These should return None since they're not private and we have no database
-            assert!(
-                info.is_none(),
-                "IP {} should not be classified as private",
+            // These are not private, and with no database should return "Unknown"
+            assert_eq!(info.asn.number, 0, "IP {} should be Unknown ASN", ip_str);
+            assert_eq!(
+                info.asn.organization, "Unknown",
+                "IP {} should be Unknown",
+                ip_str
+            );
+            assert_eq!(
+                info.subnet.cidr, "0.0.0.0/0",
+                "IP {} should have 0.0.0.0/0 subnet",
                 ip_str
             );
         }
@@ -373,12 +404,22 @@ mod tests {
 
         for ip_str in public_ips {
             let ip = IpAddr::from_str(ip_str).unwrap();
-            let info = lookup.lookup(ip);
+            let info = lookup.lookup(ip).unwrap();
 
-            // Should return None since no database is loaded
-            assert!(
-                info.is_none(),
-                "IP {} should not be classified as private",
+            // Without database, public IPs should return "Unknown" ASN 0
+            assert_eq!(
+                info.asn.number, 0,
+                "IP {} should be Unknown ASN without database",
+                ip_str
+            );
+            assert_eq!(
+                info.asn.organization, "Unknown",
+                "IP {} should be Unknown",
+                ip_str
+            );
+            assert_eq!(
+                info.subnet.cidr, "0.0.0.0/0",
+                "IP {} should have 0.0.0.0/0 subnet",
                 ip_str
             );
         }
@@ -398,12 +439,22 @@ mod tests {
 
         for ip_str in public_ips {
             let ip = IpAddr::from_str(ip_str).unwrap();
-            let info = lookup.lookup(ip);
+            let info = lookup.lookup(ip).unwrap();
 
-            // Should return None since no database is loaded
-            assert!(
-                info.is_none(),
-                "IPv6 {} should not be classified as private",
+            // Without database, public IPv6 should return "Unknown" ASN 0
+            assert_eq!(
+                info.asn.number, 0,
+                "IPv6 {} should be Unknown ASN without database",
+                ip_str
+            );
+            assert_eq!(
+                info.asn.organization, "Unknown",
+                "IPv6 {} should be Unknown",
+                ip_str
+            );
+            assert_eq!(
+                info.subnet.cidr, "::/0",
+                "IPv6 {} should have ::/0 subnet",
                 ip_str
             );
         }
