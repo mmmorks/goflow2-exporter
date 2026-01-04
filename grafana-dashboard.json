@@ -183,9 +183,20 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Protocol breakdown by traffic volume",
+      "description": "Protocol breakdown by traffic volume over time",
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "unit": "Bps"
+        },
         "overrides": []
       },
       "gridPos": {
@@ -195,28 +206,20 @@
         "y": 0
       },
       "options": {
-        "displayLabels": [
-          "name",
-          "percent"
-        ],
         "legend": {
-          "calcs": [],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
-          "placement": "right",
+          "placement": "bottom",
           "showLegend": true,
-          "values": [
-            "value",
-            "percent"
-          ]
-        },
-        "orientation": "auto",
-        "pieType": "pie",
-        "reduceOptions": {
-          "calcs": []
+          "sortBy": "Mean",
+          "sortDesc": true
         },
         "tooltip": {
-          "mode": "single",
-          "sort": "asc"
+          "mode": "multi",
+          "sort": "desc"
         }
       },
       "repeatDirection": "h",
@@ -232,16 +235,27 @@
       "title": "Protocol Distribution by Traffic",
       "transformations": [],
       "transparent": false,
-      "type": "piechart"
+      "type": "timeseries"
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "TCP flags breakdown by packet rate",
+      "description": "TCP flags breakdown by packet rate over time",
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "unit": "pps"
+        },
         "overrides": []
       },
       "gridPos": {
@@ -251,28 +265,20 @@
         "y": 6
       },
       "options": {
-        "displayLabels": [
-          "name",
-          "percent"
-        ],
         "legend": {
-          "calcs": [],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
-          "placement": "right",
+          "placement": "bottom",
           "showLegend": true,
-          "values": [
-            "value",
-            "percent"
-          ]
-        },
-        "orientation": "auto",
-        "pieType": "pie",
-        "reduceOptions": {
-          "calcs": []
+          "sortBy": "Mean",
+          "sortDesc": true
         },
         "tooltip": {
-          "mode": "single",
-          "sort": "asc"
+          "mode": "multi",
+          "sort": "desc"
         }
       },
       "repeatDirection": "h",
@@ -288,7 +294,7 @@
       "title": "TCP Flags Distribution by Packets",
       "transformations": [],
       "transparent": false,
-      "type": "piechart"
+      "type": "timeseries"
     },
     {
       "datasource": {

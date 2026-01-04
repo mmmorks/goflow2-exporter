@@ -314,17 +314,21 @@ def create_dashboard() -> Dashboard:
             unit="pps",
             thresholds=[("green", None), ("yellow", 1000), ("red", 10_000)]
         ))
-        
-        .with_panel(piechart_panel(
-            "Protocol Distribution by Traffic", "Protocol breakdown by traffic volume",
+
+        .with_panel(timeseries_panel(
+            "Protocol Distribution by Traffic", "Protocol breakdown by traffic volume over time",
             prom_query(f"sum by (protocol) (rate(goflow_bytes_by_protocol_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "{{protocol}}"),
-            size=(6,12)
+            unit="Bps",
+            size=(6,12),
+            stacked=True
         ))
 
         # Row 2: Protocol analysis
-        .with_panel(piechart_panel(
-            "TCP Flags Distribution by Packets", "TCP flags breakdown by packet rate",
-            prom_query(f"sum by (tcp_flags) (rate(goflow_packets_by_tcp_flags_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "{{tcp_flags}}")
+        .with_panel(timeseries_panel(
+            "TCP Flags Distribution by Packets", "TCP flags breakdown by packet rate over time",
+            prom_query(f"sum by (tcp_flags) (rate(goflow_packets_by_tcp_flags_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "{{tcp_flags}}"),
+            unit="pps",
+            stacked=True
         ))
         .with_panel(timeseries_panel(
             "Traffic by Protocol", "Traffic by protocol over time",

@@ -1,0 +1,9 @@
+[project]
+name = "goflow2-exporter"
+version = "1.0.0"
+
+requires-python = ">=3.11"
+
+dependencies = [
+    "grafana_foundation_sdk==1759917919!11.6.0"
+]
