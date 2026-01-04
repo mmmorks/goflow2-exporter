@@ -155,3 +155,81 @@ async fn test_application_components() {
     assert!(output.contains("goflow_records_all_total"));
     assert!(output.contains("192.168.88.1"));
 }
+
+#[test]
+fn test_private_ip_metrics_10_network() {
+    let test_flow = r#"{"type":"IPFIX","time_received_ns":1767324720787460121,"sequence_num":65361,"sampling_rate":0,"sampler_address":"192.168.88.1","time_flow_start_ns":1767324720000000000,"time_flow_end_ns":1767324720000000000,"bytes":500,"packets":5,"src_addr":"10.1.2.3","dst_addr":"8.8.8.8","etype":"IPv4","proto":"TCP","src_port":12345,"dst_port":443,"in_if":11,"out_if":12}"#;
+
+    let flow: FlowMessage = serde_json::from_str(test_flow).unwrap();
+    let metrics = Metrics::new(Some("./test_data/test-asn.mmdb"));
+    metrics.record_flow(&flow);
+
+    let registry_output = String::from_utf8(metrics.gather()).unwrap();
+
+    // Verify private IP (10.1.2.3) is recorded with synthetic ASN 64512
+    assert!(registry_output.contains("goflow_bytes_by_src_asn_total"));
+    assert!(registry_output.contains("64512"));
+    assert!(registry_output.contains("Private (Class A)"));
+
+    // Verify subnet is the full /8 range
+    assert!(registry_output.contains("goflow_bytes_by_src_subnet_total"));
+    assert!(registry_output.contains("10.0.0.0/8"));
+
+    // Verify public IP (8.8.8.8) still uses database
+    assert!(registry_output.contains("15169")); // Google ASN
+}
+
+#[test]
+fn test_private_ip_metrics_172_network() {
+    let test_flow = r#"{"type":"IPFIX","time_received_ns":1767324720787460121,"sequence_num":65361,"sampling_rate":0,"sampler_address":"192.168.88.1","time_flow_start_ns":1767324720000000000,"time_flow_end_ns":1767324720000000000,"bytes":1000,"packets":10,"src_addr":"172.16.5.10","dst_addr":"1.1.1.1","etype":"IPv4","proto":"UDP","src_port":53,"dst_port":12345,"in_if":11,"out_if":12}"#;
+
+    let flow: FlowMessage = serde_json::from_str(test_flow).unwrap();
+    let metrics = Metrics::new(None); // No database
+    metrics.record_flow(&flow);
+
+    let registry_output = String::from_utf8(metrics.gather()).unwrap();
+
+    // Verify private IP is recorded even without database
+    assert!(registry_output.contains("64513"));
+    assert!(registry_output.contains("Private (Class B)"));
+    assert!(registry_output.contains("172.16.0.0/12"));
+}
+
+#[test]
+fn test_private_ip_metrics_192_network() {
+    let test_flow = r#"{"type":"IPFIX","time_received_ns":1767324720787460121,"sequence_num":65361,"sampling_rate":0,"sampler_address":"192.168.88.1","time_flow_start_ns":1767324720000000000,"time_flow_end_ns":1767324720000000000,"bytes":2000,"packets":20,"src_addr":"192.168.1.1","dst_addr":"192.168.2.1","etype":"IPv4","proto":"TCP","src_port":80,"dst_port":443,"in_if":11,"out_if":12}"#;
+
+    let flow: FlowMessage = serde_json::from_str(test_flow).unwrap();
+    let metrics = Metrics::new(None);
+    metrics.record_flow(&flow);
+
+    let registry_output = String::from_utf8(metrics.gather()).unwrap();
+
+    // Both source and destination are private, should see ASN 64514 twice
+    assert!(registry_output.contains("64514"));
+    assert!(registry_output.contains("Private (Class C)"));
+    assert!(registry_output.contains("192.168.0.0/16"));
+
+    // Should have both src and dst metrics
+    assert!(registry_output.contains("goflow_bytes_by_src_asn_total"));
+    assert!(registry_output.contains("goflow_bytes_by_dst_asn_total"));
+}
+
+#[test]
+fn test_private_ipv6_ula_metrics() {
+    let test_flow = r#"{"type":"IPFIX","time_received_ns":1767324720787460121,"sequence_num":65361,"sampling_rate":0,"sampler_address":"192.168.88.1","time_flow_start_ns":1767324720000000000,"time_flow_end_ns":1767324720000000000,"bytes":1500,"packets":15,"src_addr":"fc00::1","dst_addr":"2001:4860:4860::8888","etype":"IPv6","proto":"TCP","src_port":443,"dst_port":12345,"in_if":11,"out_if":12}"#;
+
+    let flow: FlowMessage = serde_json::from_str(test_flow).unwrap();
+    let metrics = Metrics::new(Some("./test_data/test-asn.mmdb"));
+    metrics.record_flow(&flow);
+
+    let registry_output = String::from_utf8(metrics.gather()).unwrap();
+
+    // Verify IPv6 ULA is recorded with synthetic ASN 64515
+    assert!(registry_output.contains("64515"));
+    assert!(registry_output.contains("Private (ULA)"));
+    assert!(registry_output.contains("fc00::/7"));
+
+    // Verify public IPv6 still uses database (Google)
+    assert!(registry_output.contains("15169"));
+}

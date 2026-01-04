@@ -35,7 +35,8 @@ async fn process_lines<R: tokio::io::AsyncRead + Unpin>(
         let mut remaining = line.as_str();
         while !remaining.is_empty() {
             // Try to parse one JSON object from the beginning
-            let mut deserializer = serde_json::Deserializer::from_str(remaining).into_iter::<FlowMessage>();
+            let mut deserializer =
+                serde_json::Deserializer::from_str(remaining).into_iter::<FlowMessage>();
 
             match deserializer.next() {
                 Some(Ok(flow)) => {

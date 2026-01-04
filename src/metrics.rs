@@ -288,12 +288,20 @@ impl Metrics {
             if let Ok(ip) = src_addr.parse::<IpAddr>() {
                 if let Some(ip_info) = self.asn_lookup.lookup(ip) {
                     // Record subnet metrics
-                    record_dimensional(&self.by_src_addr, &ip_info.subnet.cidr, &[&ip_info.subnet.cidr]);
+                    record_dimensional(
+                        &self.by_src_addr,
+                        &ip_info.subnet.cidr,
+                        &[&ip_info.subnet.cidr],
+                    );
 
                     // Record ASN metrics
                     let asn_str = ip_info.asn.number.to_string();
                     let key = format!("{}|{}", ip_info.asn.number, ip_info.asn.organization);
-                    record_dimensional(&self.by_src_asn, &key, &[&asn_str, &ip_info.asn.organization]);
+                    record_dimensional(
+                        &self.by_src_asn,
+                        &key,
+                        &[&asn_str, &ip_info.asn.organization],
+                    );
                 }
             }
         }
@@ -303,12 +311,20 @@ impl Metrics {
             if let Ok(ip) = dst_addr.parse::<IpAddr>() {
                 if let Some(ip_info) = self.asn_lookup.lookup(ip) {
                     // Record subnet metrics
-                    record_dimensional(&self.by_dst_addr, &ip_info.subnet.cidr, &[&ip_info.subnet.cidr]);
+                    record_dimensional(
+                        &self.by_dst_addr,
+                        &ip_info.subnet.cidr,
+                        &[&ip_info.subnet.cidr],
+                    );
 
                     // Record ASN metrics
                     let asn_str = ip_info.asn.number.to_string();
                     let key = format!("{}|{}", ip_info.asn.number, ip_info.asn.organization);
-                    record_dimensional(&self.by_dst_asn, &key, &[&asn_str, &ip_info.asn.organization]);
+                    record_dimensional(
+                        &self.by_dst_asn,
+                        &key,
+                        &[&asn_str, &ip_info.asn.organization],
+                    );
                 }
             }
         }
@@ -343,10 +359,10 @@ impl Metrics {
         ];
 
         for (group, metric_type) in dimensional_groups {
-            let removed = group.tracker.tracker.cleanup_expired(&[
-                &group.bytes,
-                &group.packets,
-            ]);
+            let removed = group
+                .tracker
+                .tracker
+                .cleanup_expired(&[&group.bytes, &group.packets]);
             if removed > 0 {
                 self.evictions_total
                     .with_label_values(&[metric_type])
@@ -825,7 +841,10 @@ mod tests {
         metrics.record_flow(&old_flow);
 
         let initial_cardinality = metrics.get_tracker_cardinality(&metrics.by_src_addr);
-        assert!(initial_cardinality > 0, "Should have recorded at least one subnet");
+        assert!(
+            initial_cardinality > 0,
+            "Should have recorded at least one subnet"
+        );
 
         // Advance time slightly and fill the cardinality limit with newer flows
         // Using Google and Cloudflare IPs to ensure ASN database lookups work
