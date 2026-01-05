@@ -62,6 +62,7 @@ pub fn classify_l7_protocol(l4_protocol: &str, port: u16) -> String {
         ("TCP", 27017) => "MongoDB".to_string(),
         ("TCP", 27018) => "MongoDB-Secondary".to_string(),
         ("TCP", 6379) => "Redis".to_string(),
+        ("TCP", 7000) => "Cassandra".to_string(),
 
         // Messaging & Push Notifications
         ("TCP", 1883) => "MQTT".to_string(),
@@ -72,10 +73,12 @@ pub fn classify_l7_protocol(l4_protocol: &str, port: u16) -> String {
         // VoIP & Real-time Communication
         ("TCP", 5061) => "SIP-TLS".to_string(),
         ("UDP", 3478) => "STUN".to_string(),
+        ("UDP", 4500) => "IPsec-NAT-T".to_string(),
 
         // Network Management & Monitoring
         ("UDP", 161) => "SNMP".to_string(),
         ("UDP", 2055) => "NetFlow".to_string(),
+        ("TCP", 8089) => "Splunk".to_string(),
 
         // IoT & Device Management
         ("TCP", 5683) => "CoAP".to_string(),
@@ -97,16 +100,8 @@ pub fn classify_l7_protocol(l4_protocol: &str, port: u16) -> String {
         ("UDP", 67) | ("UDP", 68) => "DHCP".to_string(),
         ("TCP", 7) => "Echo".to_string(),
 
-        // Gaming & Custom Services
+        // Gaming
         ("TCP", 25565) => "Minecraft".to_string(),
-        ("TCP", 1337) => "Gaming".to_string(),
-
-        // Custom/Unidentified Services (ports you're seeing traffic on)
-        ("TCP", 1200) => "Custom-1200".to_string(),
-        ("TCP", 4070) => "Custom-4070".to_string(),
-        ("TCP", 4431) => "Custom-4431".to_string(),
-        ("UDP", 7551) => "Custom-7551".to_string(),
-        ("UDP", 8099) => "Custom-8099".to_string(),
 
         // Unknown ports - label with protocol and port number
         _ => format!("{}/{}", proto, port),
@@ -224,5 +219,8 @@ mod tests {
         assert_eq!(classify_l7_protocol("UDP", 3478), "STUN");
         assert_eq!(classify_l7_protocol("TCP", 27018), "MongoDB-Secondary");
         assert_eq!(classify_l7_protocol("TCP", 8728), "MikroTik-API");
+        assert_eq!(classify_l7_protocol("TCP", 7000), "Cassandra");
+        assert_eq!(classify_l7_protocol("TCP", 8089), "Splunk");
+        assert_eq!(classify_l7_protocol("UDP", 4500), "IPsec-NAT-T");
     }
 }
