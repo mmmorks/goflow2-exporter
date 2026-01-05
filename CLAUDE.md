@@ -183,14 +183,16 @@ The system automatically detects your own public IPv6 addresses in 6rd deploymen
 The system classifies flows by Layer 7 application protocol based on port numbers:
 
 **Classification Strategy:**
-- Uses `classify_l7_protocol()` and `is_ephemeral_port()` in [src/l7_classifier.rs](src/l7_classifier.rs)
-- **Skips ephemeral ports (≥32768, which is 2^15)** to prevent cardinality explosion
+- Uses `classify_l7_protocol()` in [src/l7_classifier.rs](src/l7_classifier.rs)
+- **Examines both source and destination ports** together for each flow
+- Returns `Some(protocol_name)` for well-known ports, `None` for unknown ports
 - For typical client→server flows (e.g., `192.168.1.100:52341 → 8.8.8.8:443`):
-  - Source port 52341 (ephemeral) is **NOT** classified
-  - Destination port 443 is classified as "HTTPS"
-- If both ports are non-ephemeral, both are classified
+  - Source port 52341 (unknown) returns `None`
+  - Destination port 443 returns `Some("HTTPS")`
+  - Flow is classified as "HTTPS" (using the first well-known protocol found)
+- If both ports match well-known protocols, the source port classification is used
 - Returns transport-specific names (e.g., "HTTPS" vs "HTTP", "DNS-UDP" vs "DNS-TCP")
-- Unknown non-ephemeral ports are labeled as "PROTOCOL/PORT" (e.g., "TCP/8888")
+- **Only well-known protocols are classified** - unknown ports return `None` to prevent cardinality explosion
 
 **Port Mappings:**
 - **Web**: HTTP (80, 8080), HTTPS (443, 8443), QUIC (UDP/443)
@@ -213,7 +215,7 @@ The classifier automatically normalizes IPv6 protocols (strips "IPv6-" prefix) t
 Add new ports to the match statement in `classify_l7_protocol()` following the existing pattern. No need to maintain a separate list.
 
 **Cardinality Management:**
-By skipping ephemeral ports (≥32768, which is 2^15), the system prevents client-side port explosion. This threshold provides broader coverage than the IANA standard (49152) and matches common system configurations. Non-ephemeral ports are classified, and unknown ports are labeled as "PROTOCOL/PORT". Monitor `goflow_metric_cardinality{metric_type="l7_app"}` to track unique L7 applications.
+The system prevents cardinality explosion by only classifying well-known protocols. Unknown ports return `None` and are not recorded in metrics. This approach is more robust than relying on ephemeral port ranges, as it works regardless of the client's port allocation strategy. Each flow is classified at most once, using the first well-known protocol found when examining both source and destination ports. Monitor `goflow_metric_cardinality{metric_type="l7_app"}` to track unique L7 applications.
 
 ### Metrics Design Patterns
 

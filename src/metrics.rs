@@ -1,7 +1,7 @@
 use crate::asn::AsnLookup;
 use crate::bounded_tracker::{BoundedMetricTracker, Clock, SystemClock};
 use crate::flow::FlowMessage;
-use crate::l7_classifier::{classify_l7_protocol, is_ephemeral_port};
+use crate::l7_classifier::classify_l7_protocol;
 use crate::tcp_flags::decode_tcp_flags;
 use anyhow::Result;
 use axum::{
@@ -293,24 +293,22 @@ impl Metrics {
 
         record_dimensional(&self.by_sampler, sampler_address, &[sampler_address]);
 
-        // L7 classification - skip ephemeral ports to avoid cardinality explosion
+        // L7 classification - examine both ports and prefer well-known protocols
         let l4_proto = flow.normalized_protocol();
 
-        // Classify source port if it's not ephemeral
-        if let Some(src_port) = flow.src_port {
-            if !is_ephemeral_port(src_port) {
-                let l7_app = classify_l7_protocol(&l4_proto, src_port);
-                record_dimensional(&self.by_l7_app, &l7_app, &[&l7_app]);
-            }
-        }
+        if let (Some(src_port), Some(dst_port)) = (flow.src_port, flow.dst_port) {
+            // Classify both ports
+            let src_l7 = classify_l7_protocol(&l4_proto, src_port);
+            let dst_l7 = classify_l7_protocol(&l4_proto, dst_port);
 
-        // Classify destination port if it's not ephemeral
-        if let Some(dst_port) = flow.dst_port {
-            if !is_ephemeral_port(dst_port) {
-                let l7_app = classify_l7_protocol(&l4_proto, dst_port);
-                record_dimensional(&self.by_l7_app, &l7_app, &[&l7_app]);
-            }
+            // Use well-known protocol, or fallback to PROTOCOL/SMALLEST_PORT
+            let protocol = src_l7.or(dst_l7).unwrap_or_else(|| {
+                let smallest_port = src_port.min(dst_port);
+                format!("{}/{}", l4_proto, smallest_port)
+            });
+            record_dimensional(&self.by_l7_app, &protocol, &[&protocol]);
         }
+        // Skip L7 classification if either port is missing
 
         // Source IP metrics - single lookup for both ASN and subnet
         if let Some(src_addr) = &flow.src_addr {
@@ -981,25 +979,21 @@ mod tests {
     fn test_l7_app_both_ports_classified_when_both_well_known() {
         let metrics = Metrics::new(None);
 
-        // Flow with well-known ports on both src and dst
+        // Flow with well-known ports on both src and dst (unusual but possible)
         let flow = create_test_flow_with_ports(80, 443, "TCP");
         metrics.record_flow(&flow);
 
-        // Should classify both src port (80=HTTP) and dst port (443=HTTPS) since both are well-known
+        // Should classify flow once using the first well-known protocol found (src port 80=HTTP)
         let l7_cardinality = metrics.get_tracker_cardinality(&metrics.by_l7_app);
         assert_eq!(
-            l7_cardinality, 2,
-            "Should classify both ports when both are well-known"
+            l7_cardinality, 1,
+            "Should classify flow once when both ports are well-known"
         );
 
         let output = String::from_utf8(metrics.gather()).unwrap();
         assert!(
             output.contains(r#"l7_app="HTTP""#),
-            "Should classify src port 80 as HTTP"
-        );
-        assert!(
-            output.contains(r#"l7_app="HTTPS""#),
-            "Should classify dst port 443 as HTTPS"
+            "Should classify using src port 80 as HTTP (first match)"
         );
     }
 
@@ -1098,6 +1092,41 @@ mod tests {
         assert!(
             output.contains(r#"l7_app="HTTPS""#),
             "Should classify IPv6-TCP port 443 as HTTPS"
+        );
+    }
+
+    #[test]
+    fn test_l7_app_fallback_to_smallest_port() {
+        let metrics = Metrics::new(None);
+
+        // Flow with two unknown ports - should use smallest port
+        let flow1 = create_test_flow_with_ports(52341, 8888, "TCP");
+        metrics.record_flow(&flow1);
+
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            output.contains(r#"l7_app="TCP/8888""#),
+            "Should fallback to TCP/8888 (smallest port) when both ports are unknown"
+        );
+
+        // Another flow with different unknown ports
+        let flow2 = create_test_flow_with_ports(60000, 500, "UDP");
+        metrics.record_flow(&flow2);
+
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            output.contains(r#"l7_app="UDP/500""#),
+            "Should fallback to UDP/500 (smallest port)"
+        );
+
+        // Flow where source is smaller
+        let flow3 = create_test_flow_with_ports(1234, 5678, "TCP");
+        metrics.record_flow(&flow3);
+
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            output.contains(r#"l7_app="TCP/1234""#),
+            "Should use smallest port (src=1234) when src < dst"
         );
     }
 }
