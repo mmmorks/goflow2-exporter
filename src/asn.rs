@@ -34,25 +34,22 @@ pub struct IpInfo {
     pub subnet: SubnetInfo,
 }
 
-/// Classifies an IPv6 address as "own" (public IPv6 assigned to local network) based on next_hop patterns.
+/// Classifies an IPv6 address as "own" based on next_hop patterns.
 ///
-/// For 6rd tunnels and similar IPv6 deployments, the next_hop field reveals routing direction:
-/// - next_hop "::300:0:0:0" indicates outbound traffic (src is own IPv6)
-/// - next_hop "::4000:0:0:0" indicates inbound traffic (dst is own IPv6)
+/// For 6rd tunnels and similar IPv6 deployments:
+/// - next_hop "::300:0:0:0" indicates outbound traffic
+/// - next_hop "::4000:0:0:0" indicates inbound traffic
 ///
-/// Returns synthetic IpInfo with ASN 64516 if the address is classified as own.
-fn classify_own_ipv6(ip: IpAddr, next_hop: Option<&str>, is_source: bool) -> Option<IpInfo> {
+/// Returns synthetic IpInfo with ASN 64516 if either magic next_hop value is present.
+fn classify_own_ipv6(ip: IpAddr, next_hop: Option<&str>) -> Option<IpInfo> {
     if !matches!(ip, IpAddr::V6(_)) {
         return None;
     }
 
-    let next_hop_indicates_own = match (next_hop, is_source) {
-        (Some("::300:0:0:0"), true) => true,   // Outbound: src is own
-        (Some("::4000:0:0:0"), false) => true, // Inbound: dst is own
-        _ => false,
-    };
+    // Check for either magic next_hop value
+    let is_own = matches!(next_hop, Some("::300:0:0:0") | Some("::4000:0:0:0"));
 
-    if next_hop_indicates_own {
+    if is_own {
         // Extract /64 prefix from the full IPv6 address for subnet tracking
         if let IpAddr::V6(v6) = ip {
             let segments = v6.segments();
@@ -166,21 +163,17 @@ impl AsnLookup {
     /// Lookup both ASN and subnet information for an IP address with next_hop context.
     ///
     /// Checks in order:
-    /// 1. Own IPv6 addresses (based on next_hop patterns for 6rd/tunnels)
+    /// 1. Own IPv6 addresses (based on next_hop magic values for 6rd/tunnels)
     /// 2. Private IP addresses (RFC 1918, IPv6 ULA)
     /// 3. MaxMind ASN database
     /// 4. Falls back to "Unknown" (ASN 0)
     ///
     /// The next_hop parameter enables automatic detection of own public IPv6 addresses
-    /// in 6rd deployments where next_hop reveals routing direction.
-    pub fn lookup_with_context(
-        &self,
-        ip: IpAddr,
-        next_hop: Option<&str>,
-        is_source: bool,
-    ) -> Option<IpInfo> {
+    /// in 6rd deployments. If next_hop is "::300:0:0:0" or "::4000:0:0:0", IPv6 addresses
+    /// are classified as "own".
+    pub fn lookup_with_context(&self, ip: IpAddr, next_hop: Option<&str>) -> Option<IpInfo> {
         // First check if this is own public IPv6 (6rd or similar)
-        if let Some(own_info) = classify_own_ipv6(ip, next_hop, is_source) {
+        if let Some(own_info) = classify_own_ipv6(ip, next_hop) {
             return Some(own_info);
         }
 
@@ -559,11 +552,9 @@ mod tests {
     fn test_own_ipv6_outbound_detection() {
         let lookup = AsnLookup::new(None);
 
-        // Outbound traffic (::300:0:0:0) - source should be classified as own
+        // Outbound traffic (::300:0:0:0) - should be classified as own
         let ip = IpAddr::from_str("2602:47:d4ad:f901:aa23:feff:fe20:946b").unwrap();
-        let info = lookup
-            .lookup_with_context(ip, Some("::300:0:0:0"), true)
-            .unwrap();
+        let info = lookup.lookup_with_context(ip, Some("::300:0:0:0")).unwrap();
 
         assert_eq!(info.asn.number, 64516);
         assert_eq!(info.asn.organization, "Own (Public IPv6)");
@@ -575,10 +566,10 @@ mod tests {
     fn test_own_ipv6_inbound_detection() {
         let lookup = AsnLookup::new(None);
 
-        // Inbound traffic (::4000:0:0:0) - destination should be classified as own
+        // Inbound traffic (::4000:0:0:0) - should be classified as own
         let ip = IpAddr::from_str("2602:47:d4ad:f901:3152:860d:d317:16d7").unwrap();
         let info = lookup
-            .lookup_with_context(ip, Some("::4000:0:0:0"), false)
+            .lookup_with_context(ip, Some("::4000:0:0:0"))
             .unwrap();
 
         assert_eq!(info.asn.number, 64516);
@@ -588,27 +579,12 @@ mod tests {
     }
 
     #[test]
-    fn test_own_ipv6_wrong_direction_not_classified() {
-        let lookup = AsnLookup::new(None);
-
-        // Outbound next_hop but checking destination - should NOT be classified as own
-        let ip = IpAddr::from_str("2602:47:d4ad:f901:aa23:feff:fe20:946b").unwrap();
-        let info = lookup
-            .lookup_with_context(ip, Some("::300:0:0:0"), false)
-            .unwrap();
-
-        // Should fall back to "Unknown" (ASN 0) since no database
-        assert_eq!(info.asn.number, 0);
-        assert_eq!(info.asn.organization, "Unknown");
-    }
-
-    #[test]
     fn test_own_ipv6_no_next_hop_not_classified() {
         let lookup = AsnLookup::new(None);
 
         // No next_hop provided - should NOT be classified as own
         let ip = IpAddr::from_str("2602:47:d4ad:f901:aa23:feff:fe20:946b").unwrap();
-        let info = lookup.lookup_with_context(ip, None, true).unwrap();
+        let info = lookup.lookup_with_context(ip, None).unwrap();
 
         // Should fall back to "Unknown" (ASN 0) since no database
         assert_eq!(info.asn.number, 0);
@@ -622,7 +598,7 @@ mod tests {
         // Different next_hop value - should NOT be classified as own
         let ip = IpAddr::from_str("2602:47:d4ad:f901:aa23:feff:fe20:946b").unwrap();
         let info = lookup
-            .lookup_with_context(ip, Some("aa23:feff:fe20:946b:8000::"), true)
+            .lookup_with_context(ip, Some("aa23:feff:fe20:946b:8000::"))
             .unwrap();
 
         // Should fall back to "Unknown" (ASN 0) since no database
@@ -636,9 +612,7 @@ mod tests {
 
         // IPv4 address should not be affected by next_hop detection
         let ip = IpAddr::from_str("192.168.1.1").unwrap();
-        let info = lookup
-            .lookup_with_context(ip, Some("::300:0:0:0"), true)
-            .unwrap();
+        let info = lookup.lookup_with_context(ip, Some("::300:0:0:0")).unwrap();
 
         // Should still be classified as private IPv4
         assert_eq!(info.asn.number, 64514);
@@ -651,9 +625,7 @@ mod tests {
 
         // Even with database, own IPv6 detection should take precedence
         let ip = IpAddr::from_str("2602:47:d4ad:f901:aa23:feff:fe20:946b").unwrap();
-        let info = lookup
-            .lookup_with_context(ip, Some("::300:0:0:0"), true)
-            .unwrap();
+        let info = lookup.lookup_with_context(ip, Some("::300:0:0:0")).unwrap();
 
         assert_eq!(info.asn.number, 64516);
         assert_eq!(info.asn.organization, "Own (Public IPv6)");
@@ -674,9 +646,7 @@ mod tests {
 
         for host_str in hosts {
             let ip = IpAddr::from_str(host_str).unwrap();
-            let info = lookup
-                .lookup_with_context(ip, Some("::300:0:0:0"), true)
-                .unwrap();
+            let info = lookup.lookup_with_context(ip, Some("::300:0:0:0")).unwrap();
 
             assert_eq!(info.asn.number, 64516);
             assert_eq!(info.asn.organization, "Own (Public IPv6)");

@@ -310,49 +310,52 @@ impl Metrics {
         }
         // Skip L7 classification if either port is missing
 
-        // Source IP metrics - single lookup for both ASN and subnet
-        if let Some(src_addr) = &flow.src_addr {
-            if let Ok(ip) = src_addr.parse::<IpAddr>() {
-                let next_hop = flow.next_hop.as_deref();
-                if let Some(ip_info) = self.asn_lookup.lookup_with_context(ip, next_hop, true) {
-                    // Record subnet metrics
-                    record_dimensional(
-                        &self.by_src_addr,
+        // Source and destination IP metrics
+        self.record_ip_metrics(
+            flow.src_addr.as_ref(),
+            flow.next_hop.as_deref(),
+            &self.by_src_addr,
+            &self.by_src_asn,
+            scaled_bytes,
+            scaled_packets,
+        );
+
+        self.record_ip_metrics(
+            flow.dst_addr.as_ref(),
+            flow.next_hop.as_deref(),
+            &self.by_dst_addr,
+            &self.by_dst_asn,
+            scaled_bytes,
+            scaled_packets,
+        );
+    }
+
+    fn record_ip_metrics(
+        &self,
+        ip_addr: Option<&String>,
+        next_hop: Option<&str>,
+        addr_group: &DimensionalMetricGroup,
+        asn_group: &DimensionalMetricGroup,
+        scaled_bytes: u64,
+        scaled_packets: u64,
+    ) {
+        if let Some(addr) = ip_addr {
+            if let Ok(ip) = addr.parse::<IpAddr>() {
+                if let Some(ip_info) = self.asn_lookup.lookup_with_context(ip, next_hop) {
+                    addr_group.tracker.tracker.increment(
                         &ip_info.subnet.cidr,
+                        &[&addr_group.bytes, &addr_group.packets],
                         &[&ip_info.subnet.cidr],
+                        &[scaled_bytes, scaled_packets],
                     );
 
-                    // Record ASN metrics
                     let asn_str = ip_info.asn.number.to_string();
                     let key = format!("{}|{}", ip_info.asn.number, ip_info.asn.organization);
-                    record_dimensional(
-                        &self.by_src_asn,
+                    asn_group.tracker.tracker.increment(
                         &key,
+                        &[&asn_group.bytes, &asn_group.packets],
                         &[&asn_str, &ip_info.asn.organization],
-                    );
-                }
-            }
-        }
-
-        // Destination IP metrics - single lookup for both ASN and subnet
-        if let Some(dst_addr) = &flow.dst_addr {
-            if let Ok(ip) = dst_addr.parse::<IpAddr>() {
-                let next_hop = flow.next_hop.as_deref();
-                if let Some(ip_info) = self.asn_lookup.lookup_with_context(ip, next_hop, false) {
-                    // Record subnet metrics
-                    record_dimensional(
-                        &self.by_dst_addr,
-                        &ip_info.subnet.cidr,
-                        &[&ip_info.subnet.cidr],
-                    );
-
-                    // Record ASN metrics
-                    let asn_str = ip_info.asn.number.to_string();
-                    let key = format!("{}|{}", ip_info.asn.number, ip_info.asn.organization);
-                    record_dimensional(
-                        &self.by_dst_asn,
-                        &key,
-                        &[&asn_str, &ip_info.asn.organization],
+                        &[scaled_bytes, scaled_packets],
                     );
                 }
             }

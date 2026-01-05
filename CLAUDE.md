@@ -173,8 +173,9 @@ The system provides synthetic ASN classifications for different IP address types
 
 **Own IPv6 Detection (6rd Tunnels):**
 The system automatically detects your own public IPv6 addresses in 6rd deployments by analyzing the `next_hop` field:
-- `next_hop = "::300:0:0:0"` indicates outbound traffic → src_addr is own IPv6
-- `next_hop = "::4000:0:0:0"` indicates inbound traffic → dst_addr is own IPv6
+- `next_hop = "::300:0:0:0"` indicates outbound traffic (own IPv6)
+- `next_hop = "::4000:0:0:0"` indicates inbound traffic (own IPv6)
+- IPv6 addresses are classified as "own" when either magic next_hop value is present
 - All detected addresses are grouped by /64 prefix
 - See `classify_own_ipv6()` in [src/asn.rs](src/asn.rs#L44) for implementation
 
