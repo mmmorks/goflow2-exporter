@@ -124,11 +124,12 @@ The codebase is organized into focused modules with clear responsibilities:
 - **`tcp_flags.rs`**: Decodes TCP flag bitmask into human-readable strings
 
 - **`l7_classifier.rs`**: Classifies flows by Layer 7 application protocol based on port numbers:
-  - Maps (L4 protocol, port) tuples to application names (e.g., "HTTP", "DNS-UDP", "MySQL")
+  - `is_ephemeral_port()`: Checks if a port is in the ephemeral range (≥32768, which is 2^15)
+  - `classify_l7_protocol()`: Maps (L4 protocol, port) tuples to application names
   - Returns transport-specific names (e.g., "HTTPS" vs "HTTP", "DNS-UDP" vs "DNS-TCP")
   - Handles IPv6 protocol normalization (strips "IPv6-" prefix for port matching)
-  - Unknown ports are labeled as "PROTOCOL/PORT" (e.g., "TCP/8888")
-  - Includes well-known ports for web, email, databases, services, and games
+  - Ephemeral ports are skipped in metrics to prevent cardinality explosion
+  - Includes extensive port mappings for web, email, databases, messaging, VoIP, IoT, and more
 
 ### Concurrency Model
 
@@ -182,28 +183,37 @@ The system automatically detects your own public IPv6 addresses in 6rd deploymen
 The system classifies flows by Layer 7 application protocol based on port numbers:
 
 **Classification Strategy:**
-- Uses `classify_l7_protocol()` in [src/l7_classifier.rs](src/l7_classifier.rs)
-- Classifies BOTH source and destination ports (flows are double-counted)
+- Uses `classify_l7_protocol()` and `is_ephemeral_port()` in [src/l7_classifier.rs](src/l7_classifier.rs)
+- **Skips ephemeral ports (≥32768, which is 2^15)** to prevent cardinality explosion
+- For typical client→server flows (e.g., `192.168.1.100:52341 → 8.8.8.8:443`):
+  - Source port 52341 (ephemeral) is **NOT** classified
+  - Destination port 443 is classified as "HTTPS"
+- If both ports are non-ephemeral, both are classified
 - Returns transport-specific names (e.g., "HTTPS" vs "HTTP", "DNS-UDP" vs "DNS-TCP")
-- Unknown ports are labeled as "PROTOCOL/PORT" (e.g., "TCP/8888")
+- Unknown non-ephemeral ports are labeled as "PROTOCOL/PORT" (e.g., "TCP/8888")
 
-**Well-known Port Mappings:**
-- Web: HTTP (80, 8080), HTTPS (443, 8443)
-- DNS: DNS-UDP (53), DNS-TCP (53)
-- Email: SMTP (25, 587), IMAP (143, 993), POP3 (110, 995), and secure variants
-- Databases: MySQL (3306), PostgreSQL (5432), MongoDB (27017), Redis (6379)
-- Services: SSH (22), FTP (20-21), NTP (123), DHCP (67-68)
-- Games: Minecraft (25565)
-- Other: RDP (3389), VNC (5900), LDAP (389, 636)
+**Port Mappings:**
+- **Web**: HTTP (80, 8080), HTTPS (443, 8443), QUIC (UDP/443)
+- **DNS**: DNS-UDP (53), DNS-TCP (53)
+- **Email**: SMTP (25, 587), IMAP (143), IMAPS (993), POP3 (110), POP3S (995)
+- **Databases**: MySQL (3306), PostgreSQL (5432), MongoDB (27017, 27018), Redis (6379)
+- **Messaging**: MQTT (1883, 8883), XMPP (5222), APNS (5223)
+- **VoIP**: SIP-TLS (5061), STUN (UDP/3478)
+- **Network Management**: SNMP (UDP/161), NetFlow (UDP/2055)
+- **IoT**: CoAP (5683), MikroTik-API (8728)
+- **File Transfer**: SSH (22), FTP (20-21), RDP (3389), VNC (5900)
+- **Directory Services**: LDAP (389), LDAPS (636)
+- **Other**: NTP (UDP/123), DHCP (UDP/67-68), Echo (7), Gaming (1337, 25565)
+- **Custom**: TCP/1200, TCP/4070, TCP/4431, UDP/7551, UDP/8099
 
 **IPv6 Handling:**
 The classifier automatically normalizes IPv6 protocols (strips "IPv6-" prefix) to apply the same port mappings.
 
 **Extending Port Mappings:**
-Add new ports to the match statement in `classify_l7_protocol()` following the existing pattern.
+Add new ports to the match statement in `classify_l7_protocol()` following the existing pattern. No need to maintain a separate list.
 
-**Cardinality Considerations:**
-Since unknown ports are labeled by port number, this can lead to high cardinality with many unique ports. The `BoundedMetricTracker` handles this through LRU eviction and TTL-based expiration. Monitor `goflow_metric_cardinality{metric_type="l7_app"}` to track growth.
+**Cardinality Management:**
+By skipping ephemeral ports (≥32768, which is 2^15), the system prevents client-side port explosion. This threshold provides broader coverage than the IANA standard (49152) and matches common system configurations. Non-ephemeral ports are classified, and unknown ports are labeled as "PROTOCOL/PORT". Monitor `goflow_metric_cardinality{metric_type="l7_app"}` to track unique L7 applications.
 
 ### Metrics Design Patterns
 

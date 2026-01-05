@@ -1,7 +1,7 @@
 use crate::asn::AsnLookup;
 use crate::bounded_tracker::{BoundedMetricTracker, Clock, SystemClock};
 use crate::flow::FlowMessage;
-use crate::l7_classifier::classify_l7_protocol;
+use crate::l7_classifier::{classify_l7_protocol, is_ephemeral_port};
 use crate::tcp_flags::decode_tcp_flags;
 use anyhow::Result;
 use axum::{
@@ -293,17 +293,23 @@ impl Metrics {
 
         record_dimensional(&self.by_sampler, sampler_address, &[sampler_address]);
 
-        // L7 classification - record both source and destination ports
+        // L7 classification - skip ephemeral ports to avoid cardinality explosion
         let l4_proto = flow.normalized_protocol();
 
+        // Classify source port if it's not ephemeral
         if let Some(src_port) = flow.src_port {
-            let l7_app = classify_l7_protocol(&l4_proto, src_port);
-            record_dimensional(&self.by_l7_app, &l7_app, &[&l7_app]);
+            if !is_ephemeral_port(src_port) {
+                let l7_app = classify_l7_protocol(&l4_proto, src_port);
+                record_dimensional(&self.by_l7_app, &l7_app, &[&l7_app]);
+            }
         }
 
+        // Classify destination port if it's not ephemeral
         if let Some(dst_port) = flow.dst_port {
-            let l7_app = classify_l7_protocol(&l4_proto, dst_port);
-            record_dimensional(&self.by_l7_app, &l7_app, &[&l7_app]);
+            if !is_ephemeral_port(dst_port) {
+                let l7_app = classify_l7_protocol(&l4_proto, dst_port);
+                record_dimensional(&self.by_l7_app, &l7_app, &[&l7_app]);
+            }
         }
 
         // Source IP metrics - single lookup for both ASN and subnet
@@ -972,19 +978,18 @@ mod tests {
     }
 
     #[test]
-    fn test_l7_app_both_ports_classified() {
+    fn test_l7_app_both_ports_classified_when_both_well_known() {
         let metrics = Metrics::new(None);
 
         // Flow with well-known ports on both src and dst
         let flow = create_test_flow_with_ports(80, 443, "TCP");
         metrics.record_flow(&flow);
 
-        // Should classify both src port (80=HTTP) and dst port (443=HTTPS)
-        // This means cardinality should be 2
+        // Should classify both src port (80=HTTP) and dst port (443=HTTPS) since both are well-known
         let l7_cardinality = metrics.get_tracker_cardinality(&metrics.by_l7_app);
         assert_eq!(
             l7_cardinality, 2,
-            "Should classify both source and destination ports"
+            "Should classify both ports when both are well-known"
         );
 
         let output = String::from_utf8(metrics.gather()).unwrap();
@@ -995,6 +1000,86 @@ mod tests {
         assert!(
             output.contains(r#"l7_app="HTTPS""#),
             "Should classify dst port 443 as HTTPS"
+        );
+    }
+
+    #[test]
+    fn test_l7_app_ephemeral_ports_not_classified() {
+        let metrics = Metrics::new(None);
+
+        // Flow with ephemeral source port and well-known dest port (typical client->server)
+        let flow = create_test_flow_with_ports(52341, 443, "TCP");
+        metrics.record_flow(&flow);
+
+        // Should only classify dst port (443=HTTPS), not ephemeral src port
+        let l7_cardinality = metrics.get_tracker_cardinality(&metrics.by_l7_app);
+        assert_eq!(
+            l7_cardinality, 1,
+            "Should only classify well-known destination port, not ephemeral source"
+        );
+
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            output.contains(r#"l7_app="HTTPS""#),
+            "Should classify dst port 443 as HTTPS"
+        );
+        assert!(
+            !output.contains(r#"l7_app="TCP/52341""#),
+            "Should NOT classify ephemeral port 52341"
+        );
+    }
+
+    #[test]
+    fn test_l7_app_server_response_flow() {
+        let metrics = Metrics::new(None);
+
+        // Flow from server (src=443) to client (dst=ephemeral) - server response
+        let flow = create_test_flow_with_ports(443, 52341, "TCP");
+        metrics.record_flow(&flow);
+
+        // Should only classify src port (443=HTTPS), not ephemeral dst port
+        let l7_cardinality = metrics.get_tracker_cardinality(&metrics.by_l7_app);
+        assert_eq!(
+            l7_cardinality, 1,
+            "Should only classify well-known source port, not ephemeral destination"
+        );
+
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            output.contains(r#"l7_app="HTTPS""#),
+            "Should classify src port 443 as HTTPS"
+        );
+        assert!(
+            !output.contains(r#"l7_app="TCP/52341""#),
+            "Should NOT classify ephemeral port 52341"
+        );
+    }
+
+    #[test]
+    fn test_l7_app_no_ephemeral_cardinality_explosion() {
+        let metrics = Metrics::new(None);
+
+        // Simulate many client connections to HTTPS (different ephemeral ports)
+        for ephemeral_port in 50000..50100 {
+            let flow = create_test_flow_with_ports(ephemeral_port, 443, "TCP");
+            metrics.record_flow(&flow);
+        }
+
+        // Should only have cardinality of 1 (HTTPS), not 100+ for each ephemeral port
+        let l7_cardinality = metrics.get_tracker_cardinality(&metrics.by_l7_app);
+        assert_eq!(
+            l7_cardinality, 1,
+            "Ephemeral ports should not increase cardinality"
+        );
+
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            output.contains(r#"l7_app="HTTPS""#),
+            "Should only have HTTPS classification"
+        );
+        assert!(
+            !output.contains("TCP/50"),
+            "Should not have any ephemeral port classifications"
         );
     }
 

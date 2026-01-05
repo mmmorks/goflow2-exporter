@@ -1,3 +1,19 @@
+/// Checks if a port is in the ephemeral port range.
+///
+/// Ephemeral ports are temporary ports used by clients for outbound connections.
+/// IANA defines the range as 49152-65535, but many systems (including Linux) use 32768-60999.
+/// This function uses 2^15 (32768) as the threshold for broader coverage.
+///
+/// # Arguments
+/// * `port` - The port number to check
+///
+/// # Returns
+/// * `true` if the port is in the ephemeral range (≥32768)
+/// * `false` otherwise
+pub fn is_ephemeral_port(port: u16) -> bool {
+    port >= 32768 // 2^15
+}
+
 /// Classifies L7 application protocol based on L4 protocol and port number.
 ///
 /// Returns transport-specific names (e.g., "HTTPS", "DNS-UDP") for well-known ports.
@@ -21,13 +37,14 @@ pub fn classify_l7_protocol(l4_protocol: &str, port: u16) -> String {
     let proto = l4_protocol.strip_prefix("IPv6-").unwrap_or(l4_protocol);
 
     match (proto, port) {
-        // Web - differentiate HTTP from HTTPS
+        // Web
         ("TCP", 80) => "HTTP".to_string(),
         ("TCP", 8080) => "HTTP-Alt".to_string(),
         ("TCP", 443) => "HTTPS".to_string(),
         ("TCP", 8443) => "HTTPS-Alt".to_string(),
+        ("UDP", 443) => "QUIC".to_string(),
 
-        // DNS - differentiate TCP from UDP
+        // DNS
         ("UDP", 53) => "DNS-UDP".to_string(),
         ("TCP", 53) => "DNS-TCP".to_string(),
 
@@ -43,23 +60,53 @@ pub fn classify_l7_protocol(l4_protocol: &str, port: u16) -> String {
         ("TCP", 3306) => "MySQL".to_string(),
         ("TCP", 5432) => "PostgreSQL".to_string(),
         ("TCP", 27017) => "MongoDB".to_string(),
+        ("TCP", 27018) => "MongoDB-Secondary".to_string(),
         ("TCP", 6379) => "Redis".to_string(),
 
-        // Services
+        // Messaging & Push Notifications
+        ("TCP", 1883) => "MQTT".to_string(),
+        ("TCP", 8883) => "MQTT-TLS".to_string(),
+        ("TCP", 5222) => "XMPP".to_string(),
+        ("TCP", 5223) => "APNS".to_string(),
+
+        // VoIP & Real-time Communication
+        ("TCP", 5061) => "SIP-TLS".to_string(),
+        ("UDP", 3478) => "STUN".to_string(),
+
+        // Network Management & Monitoring
+        ("UDP", 161) => "SNMP".to_string(),
+        ("UDP", 2055) => "NetFlow".to_string(),
+
+        // IoT & Device Management
+        ("TCP", 5683) => "CoAP".to_string(),
+        ("TCP", 8728) => "MikroTik-API".to_string(),
+
+        // File Transfer & Remote Access
         ("TCP", 22) => "SSH".to_string(),
         ("TCP", 21) => "FTP".to_string(),
         ("TCP", 20) => "FTP-Data".to_string(),
-        ("UDP", 123) => "NTP".to_string(),
-        ("UDP", 67) | ("UDP", 68) => "DHCP".to_string(),
-
-        // Games
-        ("TCP", 25565) => "Minecraft".to_string(),
-
-        // Other common
         ("TCP", 3389) => "RDP".to_string(),
         ("TCP", 5900) => "VNC".to_string(),
+
+        // Directory Services
         ("TCP", 389) => "LDAP".to_string(),
         ("TCP", 636) => "LDAPS".to_string(),
+
+        // Time & Network Services
+        ("UDP", 123) => "NTP".to_string(),
+        ("UDP", 67) | ("UDP", 68) => "DHCP".to_string(),
+        ("TCP", 7) => "Echo".to_string(),
+
+        // Gaming & Custom Services
+        ("TCP", 25565) => "Minecraft".to_string(),
+        ("TCP", 1337) => "Gaming".to_string(),
+
+        // Custom/Unidentified Services (ports you're seeing traffic on)
+        ("TCP", 1200) => "Custom-1200".to_string(),
+        ("TCP", 4070) => "Custom-4070".to_string(),
+        ("TCP", 4431) => "Custom-4431".to_string(),
+        ("UDP", 7551) => "Custom-7551".to_string(),
+        ("UDP", 8099) => "Custom-8099".to_string(),
 
         // Unknown ports - label with protocol and port number
         _ => format!("{}/{}", proto, port),
@@ -142,5 +189,40 @@ mod tests {
         assert_eq!(classify_l7_protocol("TCP", 5900), "VNC");
         assert_eq!(classify_l7_protocol("TCP", 389), "LDAP");
         assert_eq!(classify_l7_protocol("TCP", 636), "LDAPS");
+    }
+
+    #[test]
+    fn test_is_ephemeral_port() {
+        // Ephemeral range starts at 32768 (2^15)
+        assert!(is_ephemeral_port(32768));
+        assert!(is_ephemeral_port(49152));
+        assert!(is_ephemeral_port(52341));
+        assert!(is_ephemeral_port(65000));
+        assert!(is_ephemeral_port(65535));
+    }
+
+    #[test]
+    fn test_is_not_ephemeral_port() {
+        // Well-known and registered ports are not ephemeral
+        assert!(!is_ephemeral_port(80));
+        assert!(!is_ephemeral_port(443));
+        assert!(!is_ephemeral_port(8080));
+        assert!(!is_ephemeral_port(22));
+        assert!(!is_ephemeral_port(3306));
+        assert!(!is_ephemeral_port(32767)); // 2^15 - 1 (one below ephemeral range)
+    }
+
+    #[test]
+    fn test_new_protocol_classifications() {
+        assert_eq!(classify_l7_protocol("UDP", 443), "QUIC");
+        assert_eq!(classify_l7_protocol("UDP", 2055), "NetFlow");
+        assert_eq!(classify_l7_protocol("TCP", 1883), "MQTT");
+        assert_eq!(classify_l7_protocol("TCP", 8883), "MQTT-TLS");
+        assert_eq!(classify_l7_protocol("TCP", 5222), "XMPP");
+        assert_eq!(classify_l7_protocol("TCP", 5223), "APNS");
+        assert_eq!(classify_l7_protocol("UDP", 161), "SNMP");
+        assert_eq!(classify_l7_protocol("UDP", 3478), "STUN");
+        assert_eq!(classify_l7_protocol("TCP", 27018), "MongoDB-Secondary");
+        assert_eq!(classify_l7_protocol("TCP", 8728), "MikroTik-API");
     }
 }
