@@ -1,6 +1,7 @@
 mod asn;
 mod bounded_tracker;
 mod flow;
+mod l7_classifier;
 mod metrics;
 mod stdin_reader;
 mod tcp_flags;

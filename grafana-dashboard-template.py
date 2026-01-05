@@ -351,7 +351,53 @@ def create_dashboard() -> Dashboard:
             stacked=True
         ))
 
-        # Row 4: Top ASNs by traffic (timeseries)
+        # Row 4: L7 Application metrics
+        .with_panel(timeseries_panel(
+            "Traffic by L7 Application", "Traffic breakdown by Layer 7 application/service",
+            prom_query(f"sum by (l7_app) (rate(goflow_bytes_by_l7_app_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "{{l7_app}}"),
+            unit="Bps",
+            stacked=True
+        ))
+        .with_panel(timeseries_panel(
+            "Packet Rate by L7 Application", "Packet rate breakdown by Layer 7 application/service",
+            prom_query(f"sum by (l7_app) (rate(goflow_packets_by_l7_app_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "{{l7_app}}"),
+            unit="pps",
+            stacked=True
+        ))
+
+        # Row 5: L7 Application distribution
+        .with_panel(piechart_panel(
+            "L7 Application Distribution (Traffic)", "Distribution of traffic by Layer 7 application",
+            prom_query(f"topk(10, sum by (l7_app) (rate(goflow_bytes_by_l7_app_total{INSTANCE_FILTER}{RATE_INTERVAL})))", "{{l7_app}}"),
+            labels=[PieChartLabels.NAME, PieChartLabels.PERCENT],
+            show_legend_table=True
+        ))
+        .with_panel(piechart_panel(
+            "L7 Application Distribution (Packets)", "Distribution of packets by Layer 7 application",
+            prom_query(f"topk(10, sum by (l7_app) (rate(goflow_packets_by_l7_app_total{INSTANCE_FILTER}{RATE_INTERVAL})))", "{{l7_app}}"),
+            labels=[PieChartLabels.NAME, PieChartLabels.PERCENT],
+            show_legend_table=True
+        ))
+
+        # Row 6: Top L7 Applications
+        .with_panel(table_panel(
+            "Top 20 L7 Applications by Traffic", "Top Layer 7 applications by traffic volume",
+            topk_query(20, "goflow_bytes_by_l7_app_total"),
+            unit="Bps",
+            value_column="Traffic Rate",
+            rename_columns={"l7_app": "Application"},
+            column_width={"Application": 180}
+        ))
+        .with_panel(table_panel(
+            "Top 20 L7 Applications by Packet Rate", "Top Layer 7 applications by packet count",
+            topk_query(20, "goflow_packets_by_l7_app_total"),
+            unit="pps",
+            value_column="Packet Rate",
+            rename_columns={"l7_app": "Application"},
+            column_width={"Application": 180}
+        ))
+
+        # Row 7: Top ASNs by traffic (timeseries)
         .with_panel(timeseries_panel(
             "Top 10 Source ASNs (Traffic)", "Top source ASNs by traffic",
             prom_query(f"topk(10, rate(goflow_bytes_by_src_asn_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "AS{{src_asn}} - {{src_asn_org}}"),
@@ -363,7 +409,7 @@ def create_dashboard() -> Dashboard:
             unit="Bps", size=(9, 12)
         ))
 
-        # Row 5: Top ASNs by traffic (tables)
+        # Row 8: Top ASNs by traffic (tables)
         .with_panel(table_panel(
             "Top 20 Destination ASNs with Organizations", "ASN traffic breakdown with organization names",
             topk_query(20, "goflow_bytes_by_dst_asn_total"),
@@ -383,7 +429,7 @@ def create_dashboard() -> Dashboard:
             unit_overrides={"ASN": "none"}
         ))
 
-        # Row 6: Top ASNs by packets
+        # Row 9: Top ASNs by packets
         .with_panel(table_panel(
             "Top 20 Destination ASNs by Packet Rate", "Destination ASN packet rate with organization names",
             topk_query(20, "goflow_packets_by_dst_asn_total"),
@@ -403,7 +449,7 @@ def create_dashboard() -> Dashboard:
             unit_overrides={"ASN": "none"}
         ))
 
-        # Row 7: Top subnets by traffic
+        # Row 10: Top subnets by traffic
         .with_panel(table_panel(
             "Top 20 Source Subnets by Traffic", "Top source Subnets by traffic volume",
             topk_query(20, "goflow_bytes_by_src_subnet_total"),
@@ -421,7 +467,7 @@ def create_dashboard() -> Dashboard:
             column_width={"Destination Subnet": 200}
         ))
 
-        # Row 8: Top Subnets by packets
+        # Row 11: Top Subnets by packets
         .with_panel(table_panel(
             "Top 20 Source Subnets by Packet Rate", "Top source Subnets by packet count",
             topk_query(20, "goflow_packets_by_src_subnet_total"),
@@ -439,7 +485,7 @@ def create_dashboard() -> Dashboard:
             column_width={"Destination Subnet": 200}
         ))
 
-        # Row 9: Metric cardinality and eviction rate
+        # Row 12: Metric cardinality and eviction rate
         .with_panel(piechart_panel(
             "Metric Cardinality", "Metric cardinality by type",
             prom_query(f"goflow_metric_cardinality{INSTANCE_FILTER}", "{{metric_type}}"),

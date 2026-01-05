@@ -1,6 +1,7 @@
 use crate::asn::AsnLookup;
 use crate::bounded_tracker::{BoundedMetricTracker, Clock, SystemClock};
 use crate::flow::FlowMessage;
+use crate::l7_classifier::classify_l7_protocol;
 use crate::tcp_flags::decode_tcp_flags;
 use anyhow::Result;
 use axum::{
@@ -133,6 +134,7 @@ pub struct Metrics {
     by_dst_addr: DimensionalMetricGroup,
     by_src_asn: DimensionalMetricGroup,
     by_dst_asn: DimensionalMetricGroup,
+    by_l7_app: DimensionalMetricGroup,
 
     // Other metrics
     parse_errors_total: IntCounterVec,
@@ -212,6 +214,14 @@ impl Metrics {
                 "by destination ASN",
                 &["dst_asn", "dst_asn_org"],
                 ttl,
+                clock.clone()
+            ),
+            by_l7_app: dimensional_metric_group!(
+                registry,
+                "by_l7_app",
+                "by L7 application",
+                &["l7_app"],
+                ttl,
                 clock
             ),
 
@@ -282,6 +292,19 @@ impl Metrics {
         record_dimensional(&self.by_tcp_flags, &tcp_flags_str, &[&tcp_flags_str]);
 
         record_dimensional(&self.by_sampler, sampler_address, &[sampler_address]);
+
+        // L7 classification - record both source and destination ports
+        let l4_proto = flow.normalized_protocol();
+
+        if let Some(src_port) = flow.src_port {
+            let l7_app = classify_l7_protocol(&l4_proto, src_port);
+            record_dimensional(&self.by_l7_app, &l7_app, &[&l7_app]);
+        }
+
+        if let Some(dst_port) = flow.dst_port {
+            let l7_app = classify_l7_protocol(&l4_proto, dst_port);
+            record_dimensional(&self.by_l7_app, &l7_app, &[&l7_app]);
+        }
 
         // Source IP metrics - single lookup for both ASN and subnet
         if let Some(src_addr) = &flow.src_addr {
@@ -358,6 +381,7 @@ impl Metrics {
             (&self.by_dst_addr, "dst_subnet"),
             (&self.by_src_asn, "src_asn"),
             (&self.by_dst_asn, "dst_asn"),
+            (&self.by_l7_app, "l7_app"),
         ];
 
         for (group, metric_type) in dimensional_groups {
@@ -388,6 +412,7 @@ impl Metrics {
             (&self.by_dst_addr, "dst_subnet"),
             (&self.by_src_asn, "src_asn"),
             (&self.by_dst_asn, "dst_asn"),
+            (&self.by_l7_app, "l7_app"),
         ];
 
         for (group, metric_type) in dimensional_groups {
@@ -418,6 +443,7 @@ impl Metrics {
             (&self.by_dst_addr, "dst_subnet"),
             (&self.by_src_asn, "src_asn"),
             (&self.by_dst_asn, "dst_asn"),
+            (&self.by_l7_app, "l7_app"),
         ];
 
         for (group, metric_type) in dimensional_groups {
@@ -864,6 +890,129 @@ mod tests {
         assert!(
             metrics.get_tracker_cardinality(&metrics.by_src_addr) <= DEFAULT_MAX_CARDINALITY,
             "Cardinality should be at or below the maximum limit"
+        );
+    }
+
+    fn create_test_flow_with_ports(src_port: u16, dst_port: u16, proto: &str) -> FlowMessage {
+        FlowMessage {
+            flow_type: Some("IPFIX".to_string()),
+            time_received_ns: Some(1234567890),
+            sequence_num: Some(1),
+            sampling_rate: Some(1),
+            sampler_address: Some("192.168.1.1".to_string()),
+            time_flow_start_ns: Some(1234567890),
+            time_flow_end_ns: Some(1234567900),
+            bytes: Some(1000),
+            packets: Some(10),
+            src_addr: Some("192.168.1.100".to_string()),
+            dst_addr: Some("8.8.8.8".to_string()),
+            src_port: Some(src_port),
+            dst_port: Some(dst_port),
+            etype: Some("IPv4".to_string()),
+            proto: Some(proto.to_string()),
+            tcp_flags: Some(0),
+            src_mac: None,
+            dst_mac: None,
+            in_if: None,
+            out_if: None,
+            next_hop: None,
+        }
+    }
+
+    #[test]
+    fn test_l7_app_metrics() {
+        let clock = Arc::new(MockClock::new());
+        let metrics = Metrics::new_with_clock(None, clock.clone());
+
+        // HTTP flow on port 80
+        let http_flow = create_test_flow_with_ports(12345, 80, "TCP");
+        metrics.record_flow(&http_flow);
+
+        // HTTPS flow on port 443
+        let https_flow = create_test_flow_with_ports(54321, 443, "TCP");
+        metrics.record_flow(&https_flow);
+
+        // DNS UDP flow on port 53
+        let dns_flow = create_test_flow_with_ports(55555, 53, "UDP");
+        metrics.record_flow(&dns_flow);
+
+        // Unknown port flow
+        let unknown_flow = create_test_flow_with_ports(9999, 8888, "TCP");
+        metrics.record_flow(&unknown_flow);
+
+        // Verify L7 metrics were recorded (check cardinality)
+        let l7_cardinality = metrics.get_tracker_cardinality(&metrics.by_l7_app);
+        assert!(
+            l7_cardinality > 0,
+            "L7 app metrics should have been recorded"
+        );
+
+        // Verify metrics output contains L7 app metrics
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            output.contains("goflow_bytes_by_l7_app_total"),
+            "Should contain L7 app bytes metric"
+        );
+        assert!(
+            output.contains("goflow_packets_by_l7_app_total"),
+            "Should contain L7 app packets metric"
+        );
+        assert!(
+            output.contains(r#"l7_app="HTTP""#),
+            "Should contain HTTP classification"
+        );
+        assert!(
+            output.contains(r#"l7_app="HTTPS""#),
+            "Should contain HTTPS classification"
+        );
+        assert!(
+            output.contains(r#"l7_app="DNS-UDP""#),
+            "Should contain DNS-UDP classification"
+        );
+    }
+
+    #[test]
+    fn test_l7_app_both_ports_classified() {
+        let metrics = Metrics::new(None);
+
+        // Flow with well-known ports on both src and dst
+        let flow = create_test_flow_with_ports(80, 443, "TCP");
+        metrics.record_flow(&flow);
+
+        // Should classify both src port (80=HTTP) and dst port (443=HTTPS)
+        // This means cardinality should be 2
+        let l7_cardinality = metrics.get_tracker_cardinality(&metrics.by_l7_app);
+        assert_eq!(
+            l7_cardinality, 2,
+            "Should classify both source and destination ports"
+        );
+
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            output.contains(r#"l7_app="HTTP""#),
+            "Should classify src port 80 as HTTP"
+        );
+        assert!(
+            output.contains(r#"l7_app="HTTPS""#),
+            "Should classify dst port 443 as HTTPS"
+        );
+    }
+
+    #[test]
+    fn test_l7_app_ipv6_protocol_normalization() {
+        let metrics = Metrics::new(None);
+
+        // Create an IPv6 flow
+        let mut flow = create_test_flow_with_ports(54321, 443, "TCP");
+        flow.etype = Some("IPv6".to_string());
+
+        metrics.record_flow(&flow);
+
+        // Should still classify port 443 as HTTPS even with IPv6
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            output.contains(r#"l7_app="HTTPS""#),
+            "Should classify IPv6-TCP port 443 as HTTPS"
         );
     }
 }
