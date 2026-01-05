@@ -18,8 +18,8 @@ use std::time::Duration;
 use tracing::info;
 
 const DEFAULT_METRICS_PORT: u16 = 9090;
-const DEFAULT_MAX_CARDINALITY: usize = 10_000;
-const DEFAULT_FLOW_TTL_SECONDS: u64 = 3600;
+const DEFAULT_MAX_CARDINALITY: usize = 1_000;
+const DEFAULT_METRIC_TTL_SECONDS: u64 = 3600;
 
 // Macro to create and register a counter metric
 macro_rules! counter {
@@ -149,7 +149,7 @@ impl Metrics {
 
     fn new_with_clock(asn_db_path: Option<&str>, clock: Arc<dyn Clock>) -> Self {
         let registry = Registry::new();
-        let ttl = Duration::from_secs(DEFAULT_FLOW_TTL_SECONDS);
+        let ttl = Duration::from_secs(DEFAULT_METRIC_TTL_SECONDS);
 
         Self {
             total: total_metric_group!(
@@ -702,7 +702,7 @@ mod tests {
         assert_eq!(metrics.get_tracker_cardinality(&metrics.by_dst_addr), 1);
 
         // Advance time past the TTL
-        clock.advance(Duration::from_secs(DEFAULT_FLOW_TTL_SECONDS + 100));
+        clock.advance(Duration::from_secs(DEFAULT_METRIC_TTL_SECONDS + 100));
 
         // Call cleanup - should remove all expired entries
         metrics.cleanup_expired_flows();
@@ -737,7 +737,7 @@ mod tests {
         assert!(initial_dst_asn > 0, "Expected dst_asn cardinality > 0");
 
         // Advance time past the TTL
-        clock.advance(Duration::from_secs(DEFAULT_FLOW_TTL_SECONDS + 100));
+        clock.advance(Duration::from_secs(DEFAULT_METRIC_TTL_SECONDS + 100));
 
         // Call cleanup - should remove expired ASN entries
         metrics.cleanup_expired_flows();
@@ -825,7 +825,7 @@ mod tests {
         );
 
         // Advance time past TTL
-        clock.advance(Duration::from_secs(DEFAULT_FLOW_TTL_SECONDS + 100));
+        clock.advance(Duration::from_secs(DEFAULT_METRIC_TTL_SECONDS + 100));
 
         // Cleanup expired flows
         metrics.cleanup_expired_flows();
