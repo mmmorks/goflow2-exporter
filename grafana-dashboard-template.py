@@ -354,13 +354,13 @@ def create_dashboard() -> Dashboard:
         # Row 4: L7 Application metrics
         .with_panel(timeseries_panel(
             "Traffic by L7 Application", "Traffic breakdown by Layer 7 application/service",
-            prom_query(f"sum by (l7_app) (rate(goflow_bytes_by_l7_app_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "{{l7_app}}"),
+            prom_query(f"topk(50, sum by (l7_app) (rate(goflow_bytes_by_l7_app_total{INSTANCE_FILTER}{RATE_INTERVAL})))", "{{l7_app}}"),
             unit="Bps",
             stacked=True
         ))
         .with_panel(timeseries_panel(
             "Packet Rate by L7 Application", "Packet rate breakdown by Layer 7 application/service",
-            prom_query(f"sum by (l7_app) (rate(goflow_packets_by_l7_app_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "{{l7_app}}"),
+            prom_query(f"topk(50, sum by (l7_app) (rate(goflow_packets_by_l7_app_total{INSTANCE_FILTER}{RATE_INTERVAL})))", "{{l7_app}}"),
             unit="pps",
             stacked=True
         ))
@@ -368,29 +368,29 @@ def create_dashboard() -> Dashboard:
         # Row 5: L7 Application distribution
         .with_panel(piechart_panel(
             "L7 Application Distribution (Traffic)", "Distribution of traffic by Layer 7 application",
-            prom_query(f"topk(10, sum by (l7_app) (rate(goflow_bytes_by_l7_app_total{INSTANCE_FILTER}{RATE_INTERVAL})))", "{{l7_app}}"),
+            prom_query(f"topk(50, sum by (l7_app) (rate(goflow_bytes_by_l7_app_total{INSTANCE_FILTER}{RATE_INTERVAL})))", "{{l7_app}}"),
             labels=[PieChartLabels.NAME, PieChartLabels.PERCENT],
             show_legend_table=True
         ))
         .with_panel(piechart_panel(
             "L7 Application Distribution (Packets)", "Distribution of packets by Layer 7 application",
-            prom_query(f"topk(10, sum by (l7_app) (rate(goflow_packets_by_l7_app_total{INSTANCE_FILTER}{RATE_INTERVAL})))", "{{l7_app}}"),
+            prom_query(f"topk(50, sum by (l7_app) (rate(goflow_packets_by_l7_app_total{INSTANCE_FILTER}{RATE_INTERVAL})))", "{{l7_app}}"),
             labels=[PieChartLabels.NAME, PieChartLabels.PERCENT],
             show_legend_table=True
         ))
 
         # Row 6: Top L7 Applications
         .with_panel(table_panel(
-            "Top 20 L7 Applications by Traffic", "Top Layer 7 applications by traffic volume",
-            topk_query(20, "goflow_bytes_by_l7_app_total"),
+            "Top 50 L7 Applications by Traffic", "Top Layer 7 applications by traffic volume",
+            topk_query(50, "goflow_bytes_by_l7_app_total"),
             unit="Bps",
             value_column="Traffic Rate",
             rename_columns={"l7_app": "Application"},
             column_width={"Application": 180}
         ))
         .with_panel(table_panel(
-            "Top 20 L7 Applications by Packet Rate", "Top Layer 7 applications by packet count",
-            topk_query(20, "goflow_packets_by_l7_app_total"),
+            "Top 50 L7 Applications by Packet Rate", "Top Layer 7 applications by packet count",
+            topk_query(50, "goflow_packets_by_l7_app_total"),
             unit="pps",
             value_column="Packet Rate",
             rename_columns={"l7_app": "Application"},
@@ -399,68 +399,68 @@ def create_dashboard() -> Dashboard:
 
         # Row 7: Top ASNs by traffic (timeseries)
         .with_panel(timeseries_panel(
-            "Top 10 Source ASNs (Traffic)", "Top source ASNs by traffic",
-            prom_query(f"topk(10, rate(goflow_bytes_by_src_asn_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "AS{{src_asn}} - {{src_asn_org}}"),
+            "Top 50 Source ASNs (Traffic)", "Top source ASNs by traffic",
+            prom_query(f"topk(50, rate(goflow_bytes_by_src_asn_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "AS{{src_asn}} - {{src_asn_org}}"),
             unit="Bps", size=(9, 12)
         ))
         .with_panel(timeseries_panel(
-            "Top 10 Destination ASNs (Traffic)", "Top destination ASNs by traffic",
-            prom_query(f"topk(10, rate(goflow_bytes_by_dst_asn_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "AS{{dst_asn}} - {{dst_asn_org}}"),
+            "Top 50 Destination ASNs (Traffic)", "Top destination ASNs by traffic",
+            prom_query(f"topk(50, rate(goflow_bytes_by_dst_asn_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "AS{{dst_asn}} - {{dst_asn_org}}"),
             unit="Bps", size=(9, 12)
         ))
 
         # Row 8: Top ASNs by traffic (tables)
         .with_panel(table_panel(
-            "Top 20 Destination ASNs with Organizations", "ASN traffic breakdown with organization names",
-            topk_query(20, "goflow_bytes_by_dst_asn_total"),
+            "Top 50 Source ASNs with Organizations", "Source ASN traffic breakdown with organization names",
+            topk_query(50, "goflow_bytes_by_src_asn_total"),
             unit="Bps",
             value_column="Traffic Rate",
-            rename_columns={"dst_asn": "ASN", "dst_asn_org": "Organization"},
+            rename_columns={"src_asn": "ASN", "src_asn_org": "Organization"},
             column_width={"Organization": 300},
             unit_overrides={"ASN": "none"}
         ))
         .with_panel(table_panel(
-            "Top 20 Source ASNs with Organizations", "Source ASN traffic breakdown with organization names",
-            topk_query(20, "goflow_bytes_by_src_asn_total"),
+            "Top 50 Destination ASNs with Organizations", "ASN traffic breakdown with organization names",
+            topk_query(50, "goflow_bytes_by_dst_asn_total"),
             unit="Bps",
             value_column="Traffic Rate",
-            rename_columns={"src_asn": "ASN", "src_asn_org": "Organization"},
+            rename_columns={"dst_asn": "ASN", "dst_asn_org": "Organization"},
             column_width={"Organization": 300},
             unit_overrides={"ASN": "none"}
         ))
 
         # Row 9: Top ASNs by packets
         .with_panel(table_panel(
-            "Top 20 Destination ASNs by Packet Rate", "Destination ASN packet rate with organization names",
-            topk_query(20, "goflow_packets_by_dst_asn_total"),
-            unit="pps",
-            value_column="Packet Rate",
-            rename_columns={"dst_asn": "ASN", "dst_asn_org": "Organization"},
-            column_width={"Organization": 300},
-            unit_overrides={"ASN": "none"}
-        ))
-        .with_panel(table_panel(
-            "Top 20 Source ASNs by Packet Rate", "Source ASN packet rate with organization names",
-            topk_query(20, "goflow_packets_by_src_asn_total"),
+            "Top 50 Source ASNs by Packet Rate", "Source ASN packet rate with organization names",
+            topk_query(50, "goflow_packets_by_src_asn_total"),
             unit="pps",
             value_column="Packet Rate",
             rename_columns={"src_asn": "ASN", "src_asn_org": "Organization"},
             column_width={"Organization": 300},
             unit_overrides={"ASN": "none"}
         ))
+        .with_panel(table_panel(
+            "Top 50 Destination ASNs by Packet Rate", "Destination ASN packet rate with organization names",
+            topk_query(50, "goflow_packets_by_dst_asn_total"),
+            unit="pps",
+            value_column="Packet Rate",
+            rename_columns={"dst_asn": "ASN", "dst_asn_org": "Organization"},
+            column_width={"Organization": 300},
+            unit_overrides={"ASN": "none"}
+        ))
 
         # Row 10: Top subnets by traffic
         .with_panel(table_panel(
-            "Top 20 Source Subnets by Traffic", "Top source Subnets by traffic volume",
-            topk_query(20, "goflow_bytes_by_src_subnet_total"),
+            "Top 50 Source Subnets by Traffic", "Top source Subnets by traffic volume",
+            topk_query(50, "goflow_bytes_by_src_subnet_total"),
             unit="Bps",
             value_column="Traffic Rate",
             rename_columns={"src_subnet": "Source Subnet"},
             column_width={"Source Subnet": 200}
         ))
         .with_panel(table_panel(
-            "Top 20 Destination Subnets by Traffic", "Top destination Subnets by traffic volume",
-            topk_query(20, "goflow_bytes_by_dst_subnet_total"),
+            "Top 50 Destination Subnets by Traffic", "Top destination Subnets by traffic volume",
+            topk_query(50, "goflow_bytes_by_dst_subnet_total"),
             unit="Bps",
             value_column="Traffic Rate",
             rename_columns={"dst_subnet": "Destination Subnet"},
@@ -469,16 +469,16 @@ def create_dashboard() -> Dashboard:
 
         # Row 11: Top Subnets by packets
         .with_panel(table_panel(
-            "Top 20 Source Subnets by Packet Rate", "Top source Subnets by packet count",
-            topk_query(20, "goflow_packets_by_src_subnet_total"),
+            "Top 50 Source Subnets by Packet Rate", "Top source Subnets by packet count",
+            topk_query(50, "goflow_packets_by_src_subnet_total"),
             unit="pps",
             value_column="Packet Rate",
             rename_columns={"src_subnet": "Source Subnet"},
             column_width={"Source Subnet": 200}
         ))
         .with_panel(table_panel(
-            "Top 20 Destination Subnets by Packet Rate", "Top destination Subnets by packet count",
-            topk_query(20, "goflow_packets_by_dst_subnet_total"),
+            "Top 50 Destination Subnets by Packet Rate", "Top destination Subnets by packet count",
+            topk_query(50, "goflow_packets_by_dst_subnet_total"),
             unit="pps",
             value_column="Packet Rate",
             rename_columns={"dst_subnet": "Destination Subnet"},
