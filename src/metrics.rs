@@ -1,6 +1,7 @@
 use crate::asn::AsnLookup;
 use crate::bounded_tracker::{BoundedMetricTracker, Clock, SystemClock};
 use crate::flow::FlowMessage;
+use crate::flow_correlator::FlowCorrelator;
 use crate::l7_classifier::{classify_l7_protocol, is_ephemeral_port};
 use crate::tcp_flags::decode_tcp_flags;
 use anyhow::Result;
@@ -122,6 +123,7 @@ struct TrackerGroup {
 pub struct Metrics {
     registry: Registry,
     asn_lookup: AsnLookup,
+    flow_correlator: FlowCorrelator,
 
     // Total metrics include record counter
     total: TotalMetricGroup,
@@ -246,6 +248,7 @@ impl Metrics {
 
             registry,
             asn_lookup: AsnLookup::new(asn_db_path),
+            flow_correlator: FlowCorrelator::new(),
         }
     }
 
@@ -328,8 +331,12 @@ impl Metrics {
             scaled_packets,
         );
 
+        // Get true destination IP (de-NATs inbound flows)
+        let true_dst_ip = self.flow_correlator.get_true_destination(flow);
+        let true_dst_str = true_dst_ip.to_string();
+
         self.record_ip_metrics(
-            flow.dst_addr.as_ref(),
+            Some(&true_dst_str),
             flow.next_hop.as_deref(),
             &self.by_dst_addr,
             &self.by_dst_asn,
@@ -410,6 +417,10 @@ impl Metrics {
                     .inc_by(removed as u64);
             }
         }
+
+        // Cleanup flow correlator cache (60 second TTL)
+        self.flow_correlator
+            .cleanup_expired(Duration::from_secs(60).as_nanos() as u64);
     }
 
     fn update_cardinality_metrics(&self) {

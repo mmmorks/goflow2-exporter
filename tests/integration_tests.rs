@@ -233,3 +233,70 @@ fn test_private_ipv6_ula_metrics() {
     // Verify public IPv6 still uses database (Google)
     assert!(registry_output.contains("15169"));
 }
+
+#[test]
+fn test_nat_flow_correlation() {
+    let metrics = Metrics::new(Some("./test_data/test-asn.mmdb"));
+
+    // Outbound NAT flow: internal client → external server
+    // This gets cached by the correlator
+    let outbound_flow = r#"{"type":"IPFIX","time_received_ns":1767324720787460121,"sequence_num":65361,"sampling_rate":0,"sampler_address":"192.168.88.1","time_flow_start_ns":1767324720000000000,"time_flow_end_ns":1767324720000000000,"bytes":1000,"packets":10,"src_addr":"192.168.88.42","dst_addr":"40.112.143.140","etype":"IPv4","proto":"TCP","src_port":46912,"dst_port":443,"in_if":12,"out_if":15}"#;
+
+    // Inbound NAT flow: external server → public NAT IP
+    // This should be correlated to show the real internal destination
+    let inbound_flow = r#"{"type":"IPFIX","time_received_ns":1767324720787460122,"sequence_num":65362,"sampling_rate":0,"sampler_address":"192.168.88.1","time_flow_start_ns":1767324720000000000,"time_flow_end_ns":1767324720000000000,"bytes":2000,"packets":20,"src_addr":"40.112.143.140","dst_addr":"71.212.173.249","etype":"IPv4","proto":"TCP","src_port":443,"dst_port":46912,"in_if":15,"out_if":12}"#;
+
+    // Record both flows
+    let flow1: FlowMessage = serde_json::from_str(outbound_flow).unwrap();
+    let flow2: FlowMessage = serde_json::from_str(inbound_flow).unwrap();
+
+    metrics.record_flow(&flow1);
+    metrics.record_flow(&flow2);
+
+    let registry_output = String::from_utf8(metrics.gather()).unwrap();
+
+    // Verify outbound destination metrics show external IP (40.112.143.140)
+    assert!(registry_output.contains("goflow_bytes_by_dst_subnet_total"));
+
+    // CRITICAL: Verify inbound metrics show internal IP (192.168.88.42), NOT the NAT IP
+    // The correlator should have replaced 71.212.173.249 with 192.168.88.42
+    assert!(
+        registry_output.contains("192.168.88.0/24") || registry_output.contains("192.168.0.0/16")
+    );
+
+    // Verify we DON'T have metrics for the NAT IP as a destination
+    // (It should have been replaced with the internal IP)
+    assert!(!registry_output.contains("71.212.173.249"));
+
+    // Verify both source and destination ASN metrics are present
+    assert!(registry_output.contains("goflow_bytes_by_src_asn_total"));
+    assert!(registry_output.contains("goflow_bytes_by_dst_asn_total"));
+
+    // Verify private IP ASN (64514 for 192.168.x.x) is in destination metrics
+    assert!(registry_output.contains("64514"));
+}
+
+#[test]
+fn test_nat_flow_correlation_unmatched() {
+    let metrics = Metrics::new(Some("./test_data/test-asn.mmdb"));
+
+    // Inbound flow with NO matching outbound flow
+    // Should fall back to using the destination IP as-is
+    // Using 8.8.8.8 (Google) which is in the test database
+    let inbound_flow = r#"{"type":"IPFIX","time_received_ns":1767324720787460121,"sequence_num":65361,"sampling_rate":0,"sampler_address":"192.168.88.1","time_flow_start_ns":1767324720000000000,"time_flow_end_ns":1767324720000000000,"bytes":1000,"packets":10,"src_addr":"1.2.3.4","dst_addr":"8.8.8.8","etype":"IPv4","proto":"TCP","src_port":80,"dst_port":12345,"in_if":15,"out_if":12}"#;
+
+    let flow: FlowMessage = serde_json::from_str(inbound_flow).unwrap();
+    metrics.record_flow(&flow);
+
+    let registry_output = String::from_utf8(metrics.gather()).unwrap();
+
+    // Without matching outbound flow, metrics should use the original destination IP
+    // Google DNS (8.8.8.8) should appear in the subnet metrics
+    assert!(registry_output.contains("8.8.8.0/24"));
+
+    // Verify it uses Google's ASN (15169)
+    assert!(registry_output.contains("15169"));
+
+    // Should NOT show internal private IP ranges since there's no correlation
+    assert!(!registry_output.contains("192.168.88.0/24"));
+}

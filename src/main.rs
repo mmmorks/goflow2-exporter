@@ -1,6 +1,7 @@
 mod asn;
 mod bounded_tracker;
 mod flow;
+mod flow_correlator;
 mod l7_classifier;
 mod metrics;
 mod stdin_reader;
