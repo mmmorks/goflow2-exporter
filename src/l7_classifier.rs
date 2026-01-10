@@ -1,3 +1,18 @@
+/// Checks if a port is in the ephemeral port range.
+///
+/// Ephemeral ports are temporary ports used by clients for outbound connections.
+/// This function uses 2^15 (32768) as the threshold.
+///
+/// # Arguments
+/// * `port` - The port number to check
+///
+/// # Returns
+/// * `true` if the port is ephemeral (≥32768)
+/// * `false` otherwise
+pub fn is_ephemeral_port(port: u16) -> bool {
+    port >= 32768 // 2^15
+}
+
 /// Classifies L7 application protocol based on L4 protocol and port number.
 ///
 /// Returns `Some(protocol_name)` for well-known ports (e.g., "HTTPS", "DNS-UDP").
@@ -198,6 +213,24 @@ mod tests {
         assert_eq!(classify_l7_protocol("TCP", 5900), Some("VNC".to_string()));
         assert_eq!(classify_l7_protocol("TCP", 389), Some("LDAP".to_string()));
         assert_eq!(classify_l7_protocol("TCP", 636), Some("LDAPS".to_string()));
+    }
+
+    #[test]
+    fn test_is_ephemeral_port() {
+        assert!(is_ephemeral_port(32768)); // 2^15
+        assert!(is_ephemeral_port(49152));
+        assert!(is_ephemeral_port(52341));
+        assert!(is_ephemeral_port(60000));
+        assert!(is_ephemeral_port(65535));
+    }
+
+    #[test]
+    fn test_is_not_ephemeral_port() {
+        assert!(!is_ephemeral_port(80));
+        assert!(!is_ephemeral_port(443));
+        assert!(!is_ephemeral_port(8080));
+        assert!(!is_ephemeral_port(8888));
+        assert!(!is_ephemeral_port(32767)); // 2^15 - 1
     }
 
     #[test]

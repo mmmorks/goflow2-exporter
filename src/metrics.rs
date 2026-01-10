@@ -1,7 +1,7 @@
 use crate::asn::AsnLookup;
 use crate::bounded_tracker::{BoundedMetricTracker, Clock, SystemClock};
 use crate::flow::FlowMessage;
-use crate::l7_classifier::classify_l7_protocol;
+use crate::l7_classifier::{classify_l7_protocol, is_ephemeral_port};
 use crate::tcp_flags::decode_tcp_flags;
 use anyhow::Result;
 use axum::{
@@ -301,12 +301,20 @@ impl Metrics {
             let src_l7 = classify_l7_protocol(&l4_proto, src_port);
             let dst_l7 = classify_l7_protocol(&l4_proto, dst_port);
 
-            // Use well-known protocol, or fallback to PROTOCOL/SMALLEST_PORT
-            let protocol = src_l7.or(dst_l7).unwrap_or_else(|| {
+            // Use well-known protocol, or fallback to PROTOCOL/SMALLEST_PORT (if not ephemeral)
+            let protocol = src_l7.or(dst_l7).or_else(|| {
                 let smallest_port = src_port.min(dst_port);
-                format!("{}/{}", l4_proto, smallest_port)
+                // Skip ephemeral ports to prevent cardinality explosion
+                if !is_ephemeral_port(smallest_port) {
+                    Some(format!("{}/{}", l4_proto, smallest_port))
+                } else {
+                    None
+                }
             });
-            record_dimensional(&self.by_l7_app, &protocol, &[&protocol]);
+
+            if let Some(proto) = protocol {
+                record_dimensional(&self.by_l7_app, &proto, &[&proto]);
+            }
         }
         // Skip L7 classification if either port is missing
 
@@ -1102,14 +1110,14 @@ mod tests {
     fn test_l7_app_fallback_to_smallest_port() {
         let metrics = Metrics::new(None);
 
-        // Flow with two unknown ports - should use smallest port
+        // Flow with two unknown ports - should use smallest port (not ephemeral)
         let flow1 = create_test_flow_with_ports(52341, 8888, "TCP");
         metrics.record_flow(&flow1);
 
         let output = String::from_utf8(metrics.gather()).unwrap();
         assert!(
             output.contains(r#"l7_app="TCP/8888""#),
-            "Should fallback to TCP/8888 (smallest port) when both ports are unknown"
+            "Should fallback to TCP/8888 (smallest non-ephemeral port) when both ports are unknown"
         );
 
         // Another flow with different unknown ports
@@ -1130,6 +1138,31 @@ mod tests {
         assert!(
             output.contains(r#"l7_app="TCP/1234""#),
             "Should use smallest port (src=1234) when src < dst"
+        );
+    }
+
+    #[test]
+    fn test_l7_app_both_unknown_and_ephemeral_not_classified() {
+        let metrics = Metrics::new(None);
+
+        // Flow with both ports unknown and smallest is ephemeral - should NOT classify
+        let flow = create_test_flow_with_ports(52341, 60000, "TCP");
+        metrics.record_flow(&flow);
+
+        let l7_cardinality = metrics.get_tracker_cardinality(&metrics.by_l7_app);
+        assert_eq!(
+            l7_cardinality, 0,
+            "Should NOT classify when both ports are unknown and smallest is ephemeral"
+        );
+
+        let output = String::from_utf8(metrics.gather()).unwrap();
+        assert!(
+            !output.contains(r#"l7_app="TCP/52341""#),
+            "Should NOT create TCP/52341 label"
+        );
+        assert!(
+            !output.contains(r#"l7_app="TCP/60000""#),
+            "Should NOT create TCP/60000 label"
         );
     }
 }
