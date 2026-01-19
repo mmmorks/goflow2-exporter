@@ -7,15 +7,18 @@ A high-performance Rust application that consumes NetFlow/IPFIX events from gofl
 - **Real-time Flow Processing**: Consumes goflow2 JSON output via stdin
 - **Prometheus Integration**: Exposes comprehensive metrics on port 9090
 - **ASN Enrichment**: Automatic IP-to-ASN lookup with organization names using MaxMind GeoLite2 ASN database
-- **Multi-dimensional Aggregation**: Track flows, bytes, and packets by:
+- **Multi-dimensional Aggregation**: Track records, bytes, and packets by:
   - Protocol (TCP, UDP, ICMP, IPv6-ICMP, etc.)
-  - Source and destination addresses
+  - Source and destination subnets (CIDR notation)
   - Source and destination ASN (with organization names)
+  - TCP flags (SYN, ACK, FIN, etc.)
+  - Layer 7 application (HTTPS, DNS, SSH, etc.)
   - Sampler address (router)
   - Flow type (NetFlow v5/v9, IPFIX, sFlow)
-- **Bounded Metric Cardinality**: Automatic cardinality tracking with configurable limits to prevent metric explosion
+- **L7 Protocol Classification**: Automatic application-layer protocol detection based on port numbers
+- **NAT Flow Correlation**: Maps inbound traffic to true internal destination IPs for accurate per-device metrics
+- **Bounded Metric Cardinality**: Automatic cardinality tracking with configurable limits and LRU eviction to prevent metric explosion
 - **Sampling Rate Correction**: Automatically scales byte and packet counts based on sampling rates (including sampling_rate=0 handling)
-- **Active Flow Tracking**: Monitors currently active flows with automatic expiration
 - **Async Processing**: Built on Tokio for efficient concurrent operations
 - **Error Tracking**: Parse error metrics for monitoring data quality
 
@@ -90,28 +93,45 @@ The aggregator exposes metrics on `http://localhost:9090/metrics`.
 
 ### Available Metrics
 
-#### Flow Counters
-- `goflow_flows_total{sampler_address, flow_type}` - Total flows received
-- `goflow_flows_by_protocol_total{protocol}` - Flows by protocol
-- `goflow_flows_by_src_subnet_total{src_subnet}` - Flows by source subnet (CIDR)
-- `goflow_flows_by_dst_subnet_total{dst_subnet}` - Flows by destination subnet (CIDR)
-- `goflow_flows_by_sampler_total{sampler_address}` - Flows by sampler
+All traffic metrics (bytes, packets) are automatically scaled by the sampling rate.
 
-#### Traffic Volume (Scaled by Sampling Rate)
-- `goflow_bytes_total{sampler_address, flow_type}` - Total bytes
-- `goflow_packets_total{sampler_address, flow_type}` - Total packets
-- `goflow_bytes_by_protocol_total{protocol}` - Bytes by protocol
+#### Totals
+- `goflow_records_all_total{sampler_address, flow_type}` - Total flow records received
+- `goflow_bytes_all_total{sampler_address, flow_type}` - Total bytes
+- `goflow_packets_all_total{sampler_address, flow_type}` - Total packets
+
+#### By Protocol
+- `goflow_bytes_by_protocol_total{protocol}` - Bytes by protocol (TCP, UDP, IPv6-TCP, etc.)
 - `goflow_packets_by_protocol_total{protocol}` - Packets by protocol
-- `goflow_bytes_by_src_subnet_total{src_subnet}` - Bytes by source subnet (CIDR)
-- `goflow_bytes_by_dst_subnet_total{dst_subnet}` - Bytes by destination subnet (CIDR)
-- `goflow_bytes_by_sampler_total{sampler_address}` - Bytes by sampler
-- `goflow_packets_by_sampler_total{sampler_address}` - Packets by sampler
 
-#### Active Flows
-- `goflow_active_flows{sampler_address}` - Current active flows
+#### By Subnet (CIDR)
+- `goflow_bytes_by_src_subnet_total{src_subnet}` - Bytes by source subnet
+- `goflow_packets_by_src_subnet_total{src_subnet}` - Packets by source subnet
+- `goflow_bytes_by_dst_subnet_total{dst_subnet}` - Bytes by destination subnet
+- `goflow_packets_by_dst_subnet_total{dst_subnet}` - Packets by destination subnet
 
-#### Error Metrics
-- `goflow_parse_errors_total{error_type}` - JSON parse errors
+#### By ASN
+- `goflow_bytes_by_src_asn_total{src_asn, src_asn_org}` - Bytes by source ASN with organization name
+- `goflow_packets_by_src_asn_total{src_asn, src_asn_org}` - Packets by source ASN
+- `goflow_bytes_by_dst_asn_total{dst_asn, dst_asn_org}` - Bytes by destination ASN with organization name
+- `goflow_packets_by_dst_asn_total{dst_asn, dst_asn_org}` - Packets by destination ASN
+
+#### By TCP Flags
+- `goflow_bytes_by_tcp_flags_total{tcp_flags}` - Bytes by TCP flags (SYN, ACK, FIN, RST, etc.)
+- `goflow_packets_by_tcp_flags_total{tcp_flags}` - Packets by TCP flags
+
+#### By Layer 7 Application
+- `goflow_bytes_by_l7_app_total{l7_app}` - Bytes by application protocol (HTTPS, DNS, SSH, etc.)
+- `goflow_packets_by_l7_app_total{l7_app}` - Packets by application protocol
+
+#### By Sampler
+- `goflow_bytes_by_sampler_total{sampler_address}` - Bytes by sampler/router
+- `goflow_packets_by_sampler_total{sampler_address}` - Packets by sampler/router
+
+#### Operational Metrics
+- `goflow_parse_errors_total` - JSON parse errors
+- `goflow_metric_cardinality{metric_type}` - Current unique label combinations per metric group
+- `goflow_evictions_total{metric_type}` - Count of label evictions due to cardinality limits
 
 ### Example Prometheus Queries
 
@@ -127,12 +147,27 @@ sum by (protocol) (rate(goflow_bytes_by_protocol_total[5m]))
 
 **Total bandwidth from all samplers (in Mbps):**
 ```promql
-sum(rate(goflow_bytes_total[1m])) * 8 / 1000000
+sum(rate(goflow_bytes_all_total[1m])) * 8 / 1000000
+```
+
+**Traffic by Layer 7 application:**
+```promql
+topk(10, sum by (l7_app) (rate(goflow_bytes_by_l7_app_total[5m])))
+```
+
+**Traffic by ASN with organization names:**
+```promql
+topk(10, sum by (dst_asn, dst_asn_org) (rate(goflow_bytes_by_dst_asn_total[5m])))
 ```
 
 **Packet rate by sampler:**
 ```promql
 sum by (sampler_address) (rate(goflow_packets_by_sampler_total[5m]))
+```
+
+**Monitor metric cardinality:**
+```promql
+goflow_metric_cardinality
 ```
 
 ## Architecture
