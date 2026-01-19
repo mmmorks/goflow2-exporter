@@ -1,0 +1,6 @@
+beans:
+    path: .beans
+    prefix: goflow2-exporter-
+    id_length: 4
+    default_status: todo
+    default_type: task
