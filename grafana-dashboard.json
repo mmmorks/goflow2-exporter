@@ -34,8 +34,8 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 4,
+        "h": 8,
+        "w": 6,
         "x": 0,
         "y": 0
       },
@@ -69,66 +69,6 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Total flow records per second",
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 100
-              },
-              {
-                "color": "red",
-                "value": 1000
-              }
-            ]
-          },
-          "unit": "rps"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 4,
-        "x": 4,
-        "y": 0
-      },
-      "options": {
-        "minVizHeight": 75,
-        "minVizWidth": 75,
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": []
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "sizing": "auto"
-      },
-      "repeatDirection": "h",
-      "targets": [
-        {
-          "expr": "rate(goflow_records_all_total{instance=\"$instance\"}[$__rate_interval])",
-          "instant": false,
-          "legendFormat": "Record Rate",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Record Rate",
-      "transparent": false,
-      "type": "gauge"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
       "description": "Total packet rate",
       "fieldConfig": {
         "defaults": {
@@ -154,9 +94,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 4,
-        "x": 8,
+        "h": 8,
+        "w": 6,
+        "x": 6,
         "y": 0
       },
       "options": {
@@ -206,7 +146,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
+        "h": 8,
         "w": 12,
         "x": 12,
         "y": 0
@@ -267,7 +207,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 6
+        "y": 8
       },
       "options": {
         "legend": {
@@ -325,7 +265,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 6
+        "y": 8
       },
       "options": {
         "legend": {
@@ -383,7 +323,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 14
+        "y": 16
       },
       "options": {
         "legend": {
@@ -441,7 +381,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 14
+        "y": 16
       },
       "options": {
         "legend": {
@@ -499,7 +439,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 24
       },
       "options": {
         "legend": {
@@ -557,7 +497,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 22
+        "y": 24
       },
       "options": {
         "legend": {
@@ -600,7 +540,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 30
+        "y": 32
       },
       "options": {
         "displayLabels": [
@@ -651,7 +591,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 30
+        "y": 32
       },
       "options": {
         "displayLabels": [
@@ -721,7 +661,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 38
+        "y": 40
       },
       "options": {
         "cellHeight": "sm",
@@ -804,7 +744,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 38
+        "y": 40
       },
       "options": {
         "cellHeight": "sm",
@@ -879,7 +819,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 47
+        "y": 49
       },
       "options": {
         "legend": {
@@ -933,7 +873,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 47
+        "y": 49
       },
       "options": {
         "legend": {
@@ -1007,7 +947,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 56
+        "y": 58
       },
       "options": {
         "cellHeight": "sm",
@@ -1103,7 +1043,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 56
+        "y": 58
       },
       "options": {
         "cellHeight": "sm",
@@ -1199,7 +1139,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 65
+        "y": 67
       },
       "options": {
         "cellHeight": "sm",
@@ -1295,7 +1235,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 65
+        "y": 67
       },
       "options": {
         "cellHeight": "sm",
@@ -1371,7 +1311,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 74
+        "y": 76
       },
       "options": {
         "legend": {
@@ -1425,7 +1365,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 74
+        "y": 76
       },
       "options": {
         "legend": {
@@ -1487,7 +1427,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 83
+        "y": 85
       },
       "options": {
         "cellHeight": "sm",
@@ -1570,7 +1510,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 83
+        "y": 85
       },
       "options": {
         "cellHeight": "sm",
@@ -1653,7 +1593,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 92
+        "y": 94
       },
       "options": {
         "cellHeight": "sm",
@@ -1736,7 +1676,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 92
+        "y": 94
       },
       "options": {
         "cellHeight": "sm",
@@ -1795,12 +1735,72 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
+      "description": "Total flow records per second",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          },
+          "unit": "rps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 0,
+        "y": 103
+      },
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": []
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "expr": "rate(goflow_records_all_total{instance=\"$instance\"}[$__rate_interval])",
+          "instant": false,
+          "legendFormat": "Record Rate",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Record Rate",
+      "transparent": false,
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "description": "Metric cardinality by type",
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 101
+        "w": 10,
+        "x": 4,
+        "y": 103
       },
       "options": {
         "displayLabels": [
@@ -1860,9 +1860,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 101
+        "w": 10,
+        "x": 14,
+        "y": 103
       },
       "options": {
         "legend": {

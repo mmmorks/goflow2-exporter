@@ -300,26 +300,21 @@ def create_dashboard() -> Dashboard:
             "Traffic Rate", "Total traffic rate in bytes per second",
             rate_query("goflow_bytes_all_total", "Traffic Rate"),
             unit="Bps",
-            thresholds=[("green", None), ("yellow", 10_000_000), ("red", 100_000_000)]
-        ))
-        .with_panel(gauge_panel(
-            "Record Rate", "Total flow records per second",
-            rate_query("goflow_records_all_total", "Record Rate"),
-            unit="rps",
-            thresholds=[("green", None), ("yellow", 100), ("red", 1000)]
+            thresholds=[("green", None), ("yellow", 10_000_000), ("red", 100_000_000)],
+            size=(8, 6)
         ))
         .with_panel(gauge_panel(
             "Packet Rate", "Total packet rate",
             rate_query("goflow_packets_all_total", "Packet Rate"),
             unit="pps",
-            thresholds=[("green", None), ("yellow", 1000), ("red", 10_000)]
+            thresholds=[("green", None), ("yellow", 1000), ("red", 10_000)],
+            size=(8, 6)
         ))
-
         .with_panel(timeseries_panel(
             "Protocol Distribution by Traffic", "Protocol breakdown by traffic volume over time",
             prom_query(f"sum by (protocol) (rate(goflow_bytes_by_protocol_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "{{protocol}}"),
             unit="Bps",
-            size=(6,12),
+            size=(8, 12),
             stacked=True
         ))
 
@@ -497,17 +492,26 @@ def create_dashboard() -> Dashboard:
             column_width={"Destination Subnet": 200}
         ))
 
-        # Row 13: Metric cardinality and eviction rate
+        # Row 13: Collector metrics
+        .with_panel(gauge_panel(
+            "Record Rate", "Total flow records per second",
+            rate_query("goflow_records_all_total", "Record Rate"),
+            unit="rps",
+            thresholds=[("green", None), ("yellow", 100), ("red", 1000)],
+            size=(8, 4)
+        ))
         .with_panel(piechart_panel(
             "Metric Cardinality", "Metric cardinality by type",
             prom_query(f"goflow_metric_cardinality{INSTANCE_FILTER}", "{{metric_type}}"),
             labels=[PieChartLabels.NAME, PieChartLabels.VALUE],
-            show_legend_table=True
+            show_legend_table=True,
+            size=(8, 10)
         ))
         .with_panel(timeseries_panel(
             "Metric Eviction Rate", "Rate of metric evictions due to cardinality limits or TTL expiration",
             rate_query("goflow_evictions_total", "{{metric_type}}"),
-            unit="eps"
+            unit="eps",
+            size=(8, 10)
         ))
     )
 
