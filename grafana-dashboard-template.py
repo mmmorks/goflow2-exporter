@@ -450,6 +450,18 @@ def create_dashboard() -> Dashboard:
         ))
 
         # Row 10: Top subnets by traffic
+        .with_panel(timeseries_panel(
+            "Top 50 Source Subnets by Traffic", "Top source Subnets by traffic volume",
+            prom_query(f"topk(50, rate(goflow_bytes_by_src_subnet_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "{{src_subnet}}"),
+            unit="Bps", size=(9, 12)
+        ))
+        .with_panel(timeseries_panel(
+            "Top 50 Destination Subnets by Traffic", "Top destination subnets by traffic volume",
+            prom_query(f"topk(50, rate(goflow_bytes_by_dst_subnet_total{INSTANCE_FILTER}{RATE_INTERVAL}))", "{{dst_subnet}}"),
+            unit="Bps", size=(9, 12)
+        ))
+
+        # Row 11: Top subnets by traffic
         .with_panel(table_panel(
             "Top 50 Source Subnets by Traffic", "Top source Subnets by traffic volume",
             topk_query(50, "goflow_bytes_by_src_subnet_total"),
@@ -467,7 +479,7 @@ def create_dashboard() -> Dashboard:
             column_width={"Destination Subnet": 200}
         ))
 
-        # Row 11: Top Subnets by packets
+        # Row 12: Top Subnets by packets
         .with_panel(table_panel(
             "Top 50 Source Subnets by Packet Rate", "Top source Subnets by packet count",
             topk_query(50, "goflow_packets_by_src_subnet_total"),
@@ -485,7 +497,7 @@ def create_dashboard() -> Dashboard:
             column_width={"Destination Subnet": 200}
         ))
 
-        # Row 12: Metric cardinality and eviction rate
+        # Row 13: Metric cardinality and eviction rate
         .with_panel(piechart_panel(
             "Metric Cardinality", "Metric cardinality by type",
             prom_query(f"goflow_metric_cardinality{INSTANCE_FILTER}", "{{metric_type}}"),

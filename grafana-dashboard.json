@@ -40,12 +40,15 @@
         "y": 0
       },
       "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
         "orientation": "auto",
         "reduceOptions": {
           "calcs": []
         },
         "showThresholdLabels": false,
-        "showThresholdMarkers": true
+        "showThresholdMarkers": true,
+        "sizing": "auto"
       },
       "repeatDirection": "h",
       "targets": [
@@ -58,7 +61,6 @@
         }
       ],
       "title": "Traffic Rate",
-      "transformations": [],
       "transparent": false,
       "type": "gauge"
     },
@@ -98,12 +100,15 @@
         "y": 0
       },
       "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
         "orientation": "auto",
         "reduceOptions": {
           "calcs": []
         },
         "showThresholdLabels": false,
-        "showThresholdMarkers": true
+        "showThresholdMarkers": true,
+        "sizing": "auto"
       },
       "repeatDirection": "h",
       "targets": [
@@ -116,7 +121,6 @@
         }
       ],
       "title": "Record Rate",
-      "transformations": [],
       "transparent": false,
       "type": "gauge"
     },
@@ -156,12 +160,15 @@
         "y": 0
       },
       "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
         "orientation": "auto",
         "reduceOptions": {
           "calcs": []
         },
         "showThresholdLabels": false,
-        "showThresholdMarkers": true
+        "showThresholdMarkers": true,
+        "sizing": "auto"
       },
       "repeatDirection": "h",
       "targets": [
@@ -174,7 +181,6 @@
         }
       ],
       "title": "Packet Rate",
-      "transformations": [],
       "transparent": false,
       "type": "gauge"
     },
@@ -233,7 +239,6 @@
         }
       ],
       "title": "Protocol Distribution by Traffic",
-      "transformations": [],
       "transparent": false,
       "type": "timeseries"
     },
@@ -292,7 +297,6 @@
         }
       ],
       "title": "TCP Flags Distribution by Packets",
-      "transformations": [],
       "transparent": false,
       "type": "timeseries"
     },
@@ -351,7 +355,6 @@
         }
       ],
       "title": "Traffic by Protocol",
-      "transformations": [],
       "transparent": false,
       "type": "timeseries"
     },
@@ -410,7 +413,6 @@
         }
       ],
       "title": "Packet Rate by TCP Flags",
-      "transformations": [],
       "transparent": false,
       "type": "timeseries"
     },
@@ -469,7 +471,6 @@
         }
       ],
       "title": "Packet Rate by Protocol",
-      "transformations": [],
       "transparent": false,
       "type": "timeseries"
     },
@@ -528,7 +529,6 @@
         }
       ],
       "title": "Traffic by L7 Application",
-      "transformations": [],
       "transparent": false,
       "type": "timeseries"
     },
@@ -587,7 +587,6 @@
         }
       ],
       "title": "Packet Rate by L7 Application",
-      "transformations": [],
       "transparent": false,
       "type": "timeseries"
     },
@@ -597,10 +596,6 @@
         "uid": "${DS_PROMETHEUS}"
       },
       "description": "Distribution of traffic by Layer 7 application",
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -643,7 +638,6 @@
         }
       ],
       "title": "L7 Application Distribution (Traffic)",
-      "transformations": [],
       "transparent": false,
       "type": "piechart"
     },
@@ -653,10 +647,6 @@
         "uid": "${DS_PROMETHEUS}"
       },
       "description": "Distribution of packets by Layer 7 application",
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -699,7 +689,6 @@
         }
       ],
       "title": "L7 Application Distribution (Packets)",
-      "transformations": [],
       "transparent": false,
       "type": "piechart"
     },
@@ -920,7 +909,6 @@
         }
       ],
       "title": "Top 50 Source ASNs (Traffic)",
-      "transformations": [],
       "transparent": false,
       "type": "timeseries"
     },
@@ -975,7 +963,6 @@
         }
       ],
       "title": "Top 50 Destination ASNs (Traffic)",
-      "transformations": [],
       "transparent": false,
       "type": "timeseries"
     },
@@ -1371,6 +1358,114 @@
       "description": "Top source Subnets by traffic volume",
       "fieldConfig": {
         "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 74
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Mean",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "expr": "topk(50, rate(goflow_bytes_by_src_subnet_total{instance=\"$instance\"}[$__rate_interval]))",
+          "instant": false,
+          "legendFormat": "{{src_subnet}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Top 50 Source Subnets by Traffic",
+      "transparent": false,
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Top destination subnets by traffic volume",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 74
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Mean",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "expr": "topk(50, rate(goflow_bytes_by_dst_subnet_total{instance=\"$instance\"}[$__rate_interval]))",
+          "instant": false,
+          "legendFormat": "{{dst_subnet}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Top 50 Destination Subnets by Traffic",
+      "transparent": false,
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Top source Subnets by traffic volume",
+      "fieldConfig": {
+        "defaults": {
           "unit": "Bps"
         },
         "overrides": [
@@ -1392,7 +1487,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 74
+        "y": 83
       },
       "options": {
         "cellHeight": "sm",
@@ -1475,7 +1570,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 74
+        "y": 83
       },
       "options": {
         "cellHeight": "sm",
@@ -1558,7 +1653,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 83
+        "y": 92
       },
       "options": {
         "cellHeight": "sm",
@@ -1641,7 +1736,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 83
+        "y": 92
       },
       "options": {
         "cellHeight": "sm",
@@ -1701,15 +1796,11 @@
         "uid": "${DS_PROMETHEUS}"
       },
       "description": "Metric cardinality by type",
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 92
+        "y": 101
       },
       "options": {
         "displayLabels": [
@@ -1747,7 +1838,6 @@
         }
       ],
       "title": "Metric Cardinality",
-      "transformations": [],
       "transparent": false,
       "type": "piechart"
     },
@@ -1772,7 +1862,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 92
+        "y": 101
       },
       "options": {
         "legend": {
@@ -1802,14 +1892,12 @@
         }
       ],
       "title": "Metric Eviction Rate",
-      "transformations": [],
       "transparent": false,
       "type": "timeseries"
     }
   ],
   "refresh": "30s",
-  "schemaVersion": 36,
-  "style": "dark",
+  "schemaVersion": 41,
   "tags": [
     "netflow",
     "ipfix",
@@ -1819,11 +1907,10 @@
   "templating": {
     "list": [
       {
+        "allowCustomValue": true,
         "auto": false,
         "auto_count": 30,
         "auto_min": "10s",
-        "hide": 0,
-        "id": "00000000-0000-0000-0000-000000000000",
         "includeAll": false,
         "label": "Prometheus",
         "multi": false,
@@ -1833,6 +1920,7 @@
         "type": "datasource"
       },
       {
+        "allowCustomValue": true,
         "auto": false,
         "auto_count": 30,
         "auto_min": "10s",
@@ -1840,8 +1928,6 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "hide": 0,
-        "id": "00000000-0000-0000-0000-000000000000",
         "includeAll": false,
         "label": "Instance",
         "multi": false,
